@@ -3,7 +3,7 @@ name: Continuous integration
 on:
   push:
     branches:
-      - main 
+      - main
   pull_request:
     branches:
       - main
@@ -14,7 +14,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  MIRIFLAGS: '-Zmiri-permissive-provenance' # Required due to warnings in bitvec 1.0.1
+  MIRIFLAGS: "-Zmiri-permissive-provenance" # Required due to warnings in bitvec 1.0.1
 
 jobs:
   check:
@@ -73,12 +73,12 @@ jobs:
       - name: Override criterion with the CodSpeed harness
         run: cargo add --dev codspeed-criterion-compat --rename criterion
       - name: Build benchmarks
-        run: cargo codspeed build criterion_benches --profile bench
+        run: cargo codspeed build --bench criterion_benches --profile bench
       - name: Run benchmarks
         uses: CodSpeedHQ/action@v4
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: "cargo codspeed run criterion_benches"
+          run: "cargo codspeed run --bench criterion_benches"
           mode: "instrumentation"
 
   tests:
@@ -89,7 +89,7 @@ jobs:
         # workaround to ignore non-stable tests when running the merge queue checks
         # see: https://github.community/t/how-to-conditionally-include-exclude-items-in-matrix-eg-based-on-branch/16853/6
         isMerge:
-            - ${{ github.event_name == 'merge_group' }}
+          - ${{ github.event_name == 'merge_group' }}
         exclude:
           - rust: beta
             isMerge: true
@@ -151,6 +151,8 @@ jobs:
           cargo add -p portgraph rayon-core@=1.12.1
           cargo add -p portgraph toml_datetime@=0.7.1
           cargo add -p portgraph toml_parser@=1.0.2
+          cargo add -p portgraph indexmap@=2.11.4
+          cargo add -p portgraph proptest@=1.8.0
       - name: Build with no features
         run: cargo minimal-versions --direct test --verbose  --no-default-features --no-run
       - name: Tests with no features
@@ -159,8 +161,7 @@ jobs:
         run: cargo minimal-versions --direct test --verbose  --all-features --no-run
       - name: Tests with all features
         run: cargo minimal-versions --direct test --verbose  --all-features
-  
-  
+
   rs-semver-checks:
     needs: [check]
     if: ${{ github.event_name == 'pull_request' }}
@@ -182,8 +183,8 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run tests with coverage instrumentation
         run: |
-            cargo llvm-cov clean --workspace
-            cargo llvm-cov --doctests
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --doctests
       - name: Generate coverage report
         run: cargo llvm-cov report --codecov --output-path coverage.json
       - name: Upload coverage to codecov.io
