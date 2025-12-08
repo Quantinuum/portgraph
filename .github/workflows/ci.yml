@@ -147,6 +147,7 @@ jobs:
         # "package `XXX` cannot be built because it requires rustc YYY or newer, while the currently active rustc version is 1.75.0"
         run: |
           rm Cargo.lock
+          cargo add -p portgraph derive_more@=2.0.1
           cargo add -p portgraph half@=2.4.1
           cargo add -p portgraph rayon-core@=1.12.1
           cargo add -p portgraph toml_datetime@=0.7.1
