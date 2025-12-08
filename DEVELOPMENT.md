@@ -2,7 +2,7 @@
 
 This guide is intended to help you get started with developing portgraph.
 
-If you find any errors or omissions in this document, please [open an issue](https://github.com/CQCL/portgraph/issues/new)!
+If you find any errors or omissions in this document, please [open an issue](https://github.com/Quantinuum/portgraph/issues/new)!
 
 ## #️⃣ Setting up the development environment
 
@@ -60,7 +60,7 @@ cargo bench --bench criterion_benches
 ```
 
 We run these on CI to track historical performance using a special single-shot test harness,
-and upload them to [codspeed.io](https://codspeed.io/CQCL/portgraph).
+and upload them to [codspeed.io](https://codspeed.io/Quantinuum/portgraph).
 
 ### Single-shot benchmarking
 
@@ -111,7 +111,7 @@ cargo clippy --all-targets
 
 We run coverage checks on the CI. Once you submit a PR, you can review the
 line-by-line coverage report on
-[codecov](https://app.codecov.io/gh/CQCL/portgraph/commits?branch=All%20branches).
+[codecov](https://app.codecov.io/gh/Quantinuum/portgraph/commits?branch=All%20branches).
 
 To run the coverage checks locally, install `cargo-llvm-cov`, generate the report with:
 ```bash
@@ -123,7 +123,7 @@ and open it with your favourite coverage viewer. In VSCode, you can use
 
 ## 🌐 Contributing to portgraph
 
-We welcome contributions to portgraph! Please open [an issue](https://github.com/CQCL/portgraph/issues/new) or [pull request](https://github.com/CQCL/portgraph/compare) if you have any questions or suggestions.
+We welcome contributions to portgraph! Please open [an issue](https://github.com/Quantinuum/portgraph/issues/new) or [pull request](https://github.com/Quantinuum/portgraph/compare) if you have any questions or suggestions.
 
 PRs should be made against the `main` branch, and should pass all CI checks before being merged. This includes using the [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) format for the PR title.
 

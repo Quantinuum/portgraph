@@ -802,7 +802,7 @@ mod test {
         for child in children {
             assert_eq!(hierarchy.parent(child), Some(root));
             assert_eq!(hierarchy.child_count(child), 0);
-            // https://github.com/CQCL/portgraph/issues/177
+            // https://github.com/Quantinuum/portgraph/issues/177
             assert_eq!(hierarchy.descendants(child).collect_vec(), vec![child]);
         }
         assert_eq!(hierarchy.prev(child0), None);
