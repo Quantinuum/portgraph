@@ -5,7 +5,7 @@ license = "Apache-2.0"
 
 readme = "README.md"
 documentation = "https://docs.rs/portgraph/"
-repository = "https://github.com/CQCL/portgraph"
+repository = "https://github.com/Quantinuum/portgraph"
 
 description = "Data structure library for directed graphs with first-level ports."
 keywords = ["data-structure", "graph"]

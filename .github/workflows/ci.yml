@@ -165,7 +165,7 @@ jobs:
   rs-semver-checks:
     needs: [check]
     if: ${{ github.event_name == 'pull_request' }}
-    uses: CQCL/hugrverse-actions/.github/workflows/rs-semver-checks.yml@main
+    uses: Quantinuum/hugrverse-actions/.github/workflows/rs-semver-checks.yml@main
     secrets:
       GITHUB_PAT: ${{ secrets.HUGRBOT_PAT }}
 
