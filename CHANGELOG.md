@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.15.3](https://github.com/Quantinuum/portgraph/compare/v0.15.2...v0.15.3) - 2025-12-08
+
+### New Features
+
+- Added support for `pyo3 0.27` 
+
 ## [0.15.2](https://github.com/Quantinuum/portgraph/compare/v0.15.1...v0.15.2) - 2025-08-05
 
 ### Bug Fixes
