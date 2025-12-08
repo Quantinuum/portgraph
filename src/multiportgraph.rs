@@ -891,7 +891,7 @@ pub(crate) mod test {
     }
 
     #[test]
-    /// <https://github.com/CQCL/portgraph/pull/191>
+    /// <https://github.com/Quantinuum/portgraph/pull/191>
     fn remove_ports() {
         let mut g: MultiPortGraph = MultiPortGraph::new();
         let n = g.add_node(2, 2);

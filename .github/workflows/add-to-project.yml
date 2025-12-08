@@ -5,9 +5,9 @@ on:
       - opened
 
 jobs:
-    add-to-project:
-        uses: CQCL/hugrverse-actions/.github/workflows/add-to-project.yml@main
-        with:
-            project-url: https://github.com/orgs/quantinuum-dev/projects/10
-        secrets:
-            GITHUB_PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}
+  add-to-project:
+    uses: Quantinuum/hugrverse-actions/.github/workflows/add-to-project.yml@main
+    with:
+      project-url: https://github.com/orgs/quantinuum-dev/projects/10
+    secrets:
+      GITHUB_PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}

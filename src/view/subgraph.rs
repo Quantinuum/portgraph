@@ -762,7 +762,7 @@ mod tests {
             Boundary::from_ports(&graph, [])
         );
         // (The subgraph cannot be recreated from said boundary,
-        //    see https://github.com/CQCL/portgraph/issues/179.)
+        //    see https://github.com/Quantinuum/portgraph/issues/179.)
     }
 
     #[test]
