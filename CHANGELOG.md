@@ -1,5 +1,6 @@
 # Changelog
 
+
 ## [0.15.3](https://github.com/Quantinuum/portgraph/compare/v0.15.2...v0.15.3) - 2025-12-08
 
 ### New Features
