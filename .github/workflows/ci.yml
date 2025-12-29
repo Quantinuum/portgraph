@@ -154,6 +154,7 @@ jobs:
           cargo add -p portgraph toml_parser@=1.0.2
           cargo add -p portgraph indexmap@=2.11.4
           cargo add -p portgraph proptest@=1.8.0
+          cargo add -p portgraph rmp@=0.8.14
       - name: Build with no features
         run: cargo minimal-versions --direct test --verbose  --no-default-features --no-run
       - name: Tests with no features
