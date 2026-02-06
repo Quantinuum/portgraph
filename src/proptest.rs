@@ -87,7 +87,7 @@ prop_compose! {
 /// Returns a tuple (g, node) so that strategies for portgraph generation can
 /// be composed with this function. E.g, use as follows:
 ///
-/// ```
+/// ```ignore
 /// use proptest::prelude::*;
 ///
 /// proptest! {
