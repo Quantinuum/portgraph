@@ -15,7 +15,9 @@ use std::{collections::VecDeque, fmt::Debug, iter::FusedIterator};
 /// the source nodes. For sparse traversals, `HashMap` or `BTreeMap` may be more
 /// efficient.
 ///
-/// Implements [Kahn's algorithm](https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm).
+/// Implements [Kahn's algorithm](https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm),
+/// tie-breaking within the same rank is done using a queue, so nodes that are
+/// discovered first are visited first.
 ///
 /// # Example
 ///
@@ -25,11 +27,13 @@ use std::{collections::VecDeque, fmt::Debug, iter::FusedIterator};
 /// let mut graph: PortGraph = PortGraph::new();
 /// let node_a = graph.add_node(2, 2);
 /// let node_b = graph.add_node(2, 2);
+/// let node_c = graph.add_node(2, 2);
 /// graph.link_nodes(node_a, 0, node_b, 0).unwrap();
+/// graph.link_nodes(node_a, 1, node_c, 0).unwrap();
 ///
 /// // Run a topological sort on the graph starting at node A.
 /// let topo: TopoSort<_> = toposort(&graph, [node_a], Direction::Outgoing);
-/// assert_eq!(topo.collect::<Vec<_>>(), [node_a, node_b]);
+/// assert_eq!(topo.collect::<Vec<_>>(), [node_a, node_b, node_c]);
 /// ```
 pub fn toposort<G, Map>(
     graph: G,
@@ -61,7 +65,9 @@ where
 /// efficient.
 ///
 /// Implements [Kahn's
-/// algorithm](https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm).
+/// algorithm](https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm),
+/// tie-breaking within the same rank is done using a queue, so nodes that are
+/// discovered first are visited first.
 ///
 /// # Example
 ///
@@ -110,7 +116,9 @@ where
 ///
 /// See [`toposort`] for more information.
 ///
-/// Implements [Kahn's algorithm](https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm).
+/// Implements [Kahn's algorithm](https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm),
+/// tie-breaking within the same rank is done using a queue, so nodes that are
+/// discovered first are visited first.
 pub struct TopoSort<'f, G, Map = BitVec> {
     graph: G,
     visited_ports: Map,
