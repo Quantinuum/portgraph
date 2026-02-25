@@ -155,6 +155,8 @@ jobs:
           cargo add -p portgraph indexmap@=2.11.4
           cargo add -p portgraph proptest@=1.8.0
           cargo add -p portgraph rmp@=0.8.14
+          cargo add -p portgraph getrandom@=0.3.4
+          cargo add -p portgraph tempfile@=3.24.0
       - name: Build with no features
         run: cargo minimal-versions --direct test --verbose  --no-default-features --no-run
       - name: Tests with no features
@@ -168,8 +170,11 @@ jobs:
     needs: [check]
     if: ${{ github.event_name == 'pull_request' }}
     uses: Quantinuum/hugrverse-actions/.github/workflows/rs-semver-checks.yml@main
+    permissions:
+      pull-requests: write
     secrets:
-      GITHUB_PAT: ${{ secrets.HUGRBOT_PAT }}
+      # Post as @hugrbot when possible, fallback to the GitHub Actions user for fork PRs.
+      GITHUB_PAT: ${{ secrets.HUGRBOT_PAT || github.token }}
 
   coverage:
     if: github.event_name != 'merge_group'
