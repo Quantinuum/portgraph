@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.15.4](https://github.com/Quantinuum/portgraph/compare/v0.15.3...v0.15.4) - 2026-02-25
+
+### Documentation
+
+- document canonical order in `toposort` for nodes of the same rank ([#280](https://github.com/Quantinuum/portgraph/pull/280))
+
 ## [0.15.3](https://github.com/Quantinuum/portgraph/compare/v0.15.2...v0.15.3) - 2025-12-08
 
 ### New Features
