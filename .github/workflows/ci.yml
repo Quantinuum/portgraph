@@ -169,8 +169,11 @@ jobs:
     needs: [check]
     if: ${{ github.event_name == 'pull_request' }}
     uses: Quantinuum/hugrverse-actions/.github/workflows/rs-semver-checks.yml@main
+    permissions:
+      pull-requests: write
     secrets:
-      GITHUB_PAT: ${{ secrets.HUGRBOT_PAT }}
+      # Post as @hugrbot when possible, fallback to the github user for fork PRs.
+      GITHUB_PAT: ${{ secrets.HUGRBOT_PAT || github.token }}
 
   coverage:
     if: github.event_name != 'merge_group'
