@@ -156,6 +156,7 @@ jobs:
           cargo add -p portgraph proptest@=1.8.0
           cargo add -p portgraph rmp@=0.8.14
           cargo add -p portgraph getrandom@=0.3.4
+          cargo add -p portgraph tempfile@=3.24.0
       - name: Build with no features
         run: cargo minimal-versions --direct test --verbose  --no-default-features --no-run
       - name: Tests with no features
