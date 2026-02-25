@@ -173,7 +173,7 @@ jobs:
     permissions:
       pull-requests: write
     secrets:
-      # Post as @hugrbot when possible, fallback to the github user for fork PRs.
+      # Post as @hugrbot when possible, fallback to the GitHub Actions user for fork PRs.
       GITHUB_PAT: ${{ secrets.HUGRBOT_PAT || github.token }}
 
   coverage:
