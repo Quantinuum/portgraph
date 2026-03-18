@@ -83,12 +83,12 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
 pub struct Nodes<'a, PO: Unsigned> {
     // We use portgraph's iterator, but filter out the copy nodes.
     pub(super) multigraph: &'a MultiPortGraph<u32, u32, PO>,
-    pub(super) iter: portgraph::Nodes<'a>,
+    pub(super) iter: portgraph::Nodes<'a, u32, u32, PO>,
     pub(super) len: usize,
 }
 
 impl<PO: Unsigned> Iterator for Nodes<'_, PO> {
-    type Item = NodeIndex;
+    type Item = NodeIndex<u32>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {

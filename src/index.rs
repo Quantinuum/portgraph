@@ -7,6 +7,9 @@ use thiserror::Error;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::Direction;
 
 /// Index of a node within a `PortGraph`.
@@ -421,8 +424,10 @@ mod serde_port_offset_impl {
 /// Use with one of `usize`, `u64`, `u32`, `u16` and `u8`. Choose the bit width
 /// that suits your needs.
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[cfg_attr(feature = "pyo3", derive(IntoPyObject))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct BitField<U>(U);
 
 /// Trait for unsigned integer types.
@@ -445,20 +450,136 @@ pub trait Unsigned:
     + ops::BitOr<Output = Self>
     + ops::BitXor<Output = Self>
 {
+    /// NonZero wrapper for the unsigned integer type, used for null-pointer optimisation.
+    //
+    // This could be replaced with the currently-unstable
+    // `std::num::ZeroablePrimitive` trait once that is stabilized.
+    type NonZero: Copy + std::fmt::Debug + Eq;
+
+    /// Convert the unsigned integer to a `usize`.
+    ///
+    /// Panics if the value is larger than `usize::MAX`.
+    #[inline(always)]
+    fn to_usize(self) -> usize {
+        num_traits::ToPrimitive::to_usize(&self).expect("value too large for usize")
+    }
+
+    /// Convert the integer to a non-zero value.
+    ///
+    /// Return `None` if the value is zero.
+    fn to_nonzero(self) -> Option<Self::NonZero>;
+
+    /// Convert the integer to a non-zero value.
+    ///
+    /// # Safety
+    ///
+    /// The value must not be zero.
+    unsafe fn to_nonzero_unchecked(self) -> Self::NonZero;
+
+    /// Recover the integer from a non-zero value.
+    fn from_nonzero(nonzero: Self::NonZero) -> Self;
 }
 
-impl Unsigned for u8 {}
-impl Unsigned for u16 {}
-impl Unsigned for u32 {}
-impl Unsigned for u64 {}
-impl Unsigned for usize {}
+impl Unsigned for u8 {
+    type NonZero = std::num::NonZeroU8;
+
+    #[inline(always)]
+    fn to_nonzero(self) -> Option<Self::NonZero> {
+        std::num::NonZeroU8::new(self)
+    }
+
+    #[inline(always)]
+    unsafe fn to_nonzero_unchecked(self) -> Self::NonZero {
+        Self::NonZero::new_unchecked(self)
+    }
+
+    #[inline(always)]
+    fn from_nonzero(nonzero: Self::NonZero) -> Self {
+        nonzero.get()
+    }
+}
+impl Unsigned for u16 {
+    type NonZero = std::num::NonZeroU16;
+
+    #[inline(always)]
+    fn to_nonzero(self) -> Option<Self::NonZero> {
+        std::num::NonZeroU16::new(self)
+    }
+
+    #[inline(always)]
+    unsafe fn to_nonzero_unchecked(self) -> Self::NonZero {
+        Self::NonZero::new_unchecked(self)
+    }
+
+    #[inline(always)]
+    fn from_nonzero(nonzero: Self::NonZero) -> Self {
+        nonzero.get()
+    }
+}
+impl Unsigned for u32 {
+    type NonZero = std::num::NonZeroU32;
+
+    #[inline(always)]
+    fn to_nonzero(self) -> Option<Self::NonZero> {
+        std::num::NonZeroU32::new(self)
+    }
+
+    #[inline(always)]
+    unsafe fn to_nonzero_unchecked(self) -> Self::NonZero {
+        Self::NonZero::new_unchecked(self)
+    }
+
+    #[inline(always)]
+    fn from_nonzero(nonzero: Self::NonZero) -> Self {
+        nonzero.get()
+    }
+}
+impl Unsigned for u64 {
+    type NonZero = std::num::NonZeroU64;
+
+    #[inline(always)]
+    fn to_nonzero(self) -> Option<Self::NonZero> {
+        std::num::NonZeroU64::new(self)
+    }
+
+    #[inline(always)]
+    unsafe fn to_nonzero_unchecked(self) -> Self::NonZero {
+        Self::NonZero::new_unchecked(self)
+    }
+
+    #[inline(always)]
+    fn from_nonzero(nonzero: Self::NonZero) -> Self {
+        nonzero.get()
+    }
+}
+impl Unsigned for usize {
+    type NonZero = std::num::NonZeroUsize;
+
+    #[inline(always)]
+    fn to_nonzero(self) -> Option<Self::NonZero> {
+        std::num::NonZeroUsize::new(self)
+    }
+
+    #[inline(always)]
+    unsafe fn to_nonzero_unchecked(self) -> Self::NonZero {
+        Self::NonZero::new_unchecked(self)
+    }
+
+    #[inline(always)]
+    fn from_nonzero(nonzero: Self::NonZero) -> Self {
+        nonzero.get()
+    }
+}
 // leave out u128 on purpose (casts to usize will panic)
 
 impl<U: Unsigned> BitField<U> {
     /// Create a new bit field with the given index and bit flag.
     #[inline(always)]
-    fn new(index: usize, bit_flag: bool) -> Self {
-        let u = U::from_usize(index).expect("index too large");
+    pub(crate) fn new(index: usize, bit_flag: bool) -> Self {
+        if index > Self::max_index() {
+            panic!("index too large");
+        }
+        let u = U::from_usize(index).unwrap();
         let ret = Self(u);
         if bit_flag {
             ret.set_bit_flag()
@@ -469,25 +590,21 @@ impl<U: Unsigned> BitField<U> {
 
     /// Create a new unset bit field
     #[inline(always)]
-    fn new_none() -> Self {
+    pub(crate) fn new_none() -> Self {
         Self(U::max_value())
     }
 
     /// Maximum allowed index.
     #[inline(always)]
     fn max_index() -> usize {
-        (U::max_value()
-            .to_usize()
-            .expect("max value larger than usize")
-            >> 1)
-            - 1
+        (U::max_value().to_usize() >> 1) - 1
     }
 
     /// Return the index stored in the bit field as a `usize`.
     ///
     /// Return `None` if the bit field is unset.
     #[inline(always)]
-    fn index(self) -> Option<usize> {
+    pub(crate) fn index(self) -> Option<usize> {
         if self.is_none() {
             return None;
         }
@@ -498,10 +615,8 @@ impl<U: Unsigned> BitField<U> {
     ///
     /// Panics if the bit field is unset.
     #[inline(always)]
-    fn index_unchecked(self) -> usize {
-        (self.0 & !Self::msb_mask())
-            .to_usize()
-            .expect("index too large")
+    pub(crate) fn index_unchecked(self) -> usize {
+        (self.0 & !Self::msb_mask()).to_usize()
     }
 
     /// Set the index in the bit field leaving the bit flag unchanged.
@@ -522,7 +637,7 @@ impl<U: Unsigned> BitField<U> {
 
     /// Return the bit flag stored in the bit field.
     #[inline(always)]
-    fn bit_flag(self) -> Option<bool> {
+    pub(crate) fn bit_flag(self) -> Option<bool> {
         if self.is_none() {
             return None;
         }
@@ -564,7 +679,7 @@ impl<U: Unsigned> BitField<U> {
 
     /// Whether the bit field is unset.
     #[inline(always)]
-    fn is_none(self) -> bool {
+    pub(crate) fn is_none(self) -> bool {
         self == Self::new_none()
     }
 }

@@ -145,7 +145,7 @@ impl<PO: Unsigned> PortView for MultiPortGraph<u32, u32, PO> {
     }
 
     #[inline]
-    fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex> + Clone {
+    fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex<u32>> + Clone {
         self::iter::Nodes {
             multigraph: self,
             iter: self.graph._nodes_iter(),
