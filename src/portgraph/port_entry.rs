@@ -3,13 +3,8 @@
 use crate::index::{BitField, Unsigned};
 use crate::{Direction, NodeIndex};
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// Meta data stored for a port, which might be free.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
 pub(super) struct PortEntry<N: Unsigned>(
     /// A bitfield containing either:
     ///
@@ -76,4 +71,68 @@ pub(super) struct PortMeta<N: Unsigned> {
     pub node: NodeIndex<N>,
     /// The direction of this port
     pub direction: Direction,
+}
+
+/// Backwards-compatible serialization for `PortEntry` using the format defined
+/// before <https://github.com/Quantinuum/portgraph/pull/283>.
+///
+/// This is encoded as a `N` integer where zero represents a free port, the node index
+/// is incremented by one, and the leftmost bit encodes the direction (0 for
+/// incoming, 1 for outgoing).
+#[cfg(feature = "serde")]
+mod port_meta_serialization {
+    use super::PortEntry;
+    use crate::index::Unsigned;
+    use crate::{Direction, NodeIndex};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    /// Returns a bit mask for the direction bit, which is the leftmost bit of
+    /// the integer type `N`.
+    fn direction_mask<N: Unsigned>() -> N {
+        !node_mask::<N>()
+    }
+
+    /// Returns a bit mask for the node index bits, which are all bits except
+    /// the leftmost bit of the integer type `N`.
+    fn node_mask<N: Unsigned>() -> N {
+        N::max_value() >> 1
+    }
+
+    impl<N: Unsigned + Serialize> Serialize for PortEntry<N> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut bits: N = N::zero();
+            if let Some(meta) = self.as_meta() {
+                if meta.direction == Direction::Outgoing {
+                    bits = bits | direction_mask::<N>();
+                }
+                let node_bits = N::from_usize(meta.node.index()).unwrap() + N::one();
+                bits = bits | (node_bits & node_mask::<N>());
+            }
+
+            bits.serialize(serializer)
+        }
+    }
+
+    impl<'de, N: Unsigned + Deserialize<'de>> Deserialize<'de> for PortEntry<N> {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let bits = N::deserialize(deserializer)?;
+            let direction_bit = bits & direction_mask::<N>();
+            let node_bits = bits & node_mask::<N>();
+
+            if node_bits.is_zero() {
+                Ok(PortEntry::new_free())
+            } else {
+                let direction = if direction_bit.is_zero() {
+                    Direction::Incoming
+                } else {
+                    Direction::Outgoing
+                };
+                let node_index = node_bits.sub(N::one());
+                Ok(PortEntry::new(
+                    NodeIndex::new(node_index.to_usize()),
+                    direction,
+                ))
+            }
+        }
+    }
 }
