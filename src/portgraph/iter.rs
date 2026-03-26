@@ -87,19 +87,21 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
 
     /// Iterates over the nodes in the port graph.
     #[inline]
-    pub(crate) fn _nodes_iter(&self) -> Nodes<'_> {
+    pub(crate) fn _nodes_iter(&self) -> Nodes<'_, u32, u32, PO> {
         Nodes {
             iter: self.node_meta.iter().enumerate(),
             len: self.node_count,
+            _marker: PhantomData,
         }
     }
 
     /// Iterates over the ports in the port graph.
     #[inline]
-    pub(crate) fn _ports_iter(&self) -> Ports<'_> {
+    pub(crate) fn _ports_iter(&self) -> Ports<'_, u32, u32> {
         Ports {
             iter: self.port_meta.iter().enumerate(),
             len: self.port_count,
+            _marker: PhantomData,
         }
     }
 
@@ -209,13 +211,14 @@ impl FusedIterator for NodePorts {}
 
 /// Iterator over the nodes of a graph, created by [`PortGraph::nodes_iter`].
 #[derive(Clone, Debug, Default)]
-pub struct Nodes<'a> {
-    pub(super) iter: std::iter::Enumerate<std::slice::Iter<'a, NodeEntry>>,
+pub struct Nodes<'a, N: Unsigned = u32, P: Unsigned = u32, PO: Unsigned = u16> {
+    pub(super) iter: std::iter::Enumerate<std::slice::Iter<'a, NodeEntry<P, PO>>>,
     pub(super) len: usize,
+    pub(super) _marker: PhantomData<N>,
 }
 
-impl Iterator for Nodes<'_> {
-    type Item = NodeIndex;
+impl<N: Unsigned, P: Unsigned, PO: Unsigned> Iterator for Nodes<'_, N, P, PO> {
+    type Item = NodeIndex<N>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -223,7 +226,7 @@ impl Iterator for Nodes<'_> {
             NodeEntry::Free(_) => None,
             NodeEntry::Node(_) => {
                 self.len -= 1;
-                Some(NodeIndex::new(index))
+                Some(NodeIndex::<N>::new(index))
             }
         })
     }
@@ -239,13 +242,13 @@ impl Iterator for Nodes<'_> {
     }
 }
 
-impl ExactSizeIterator for Nodes<'_> {
+impl<N: Unsigned, P: Unsigned, PO: Unsigned> ExactSizeIterator for Nodes<'_, N, P, PO> {
     fn len(&self) -> usize {
         self.len
     }
 }
 
-impl DoubleEndedIterator for Nodes<'_> {
+impl<N: Unsigned, P: Unsigned, PO: Unsigned> DoubleEndedIterator for Nodes<'_, N, P, PO> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.len == 0 {
             return None;
@@ -262,25 +265,25 @@ impl DoubleEndedIterator for Nodes<'_> {
     }
 }
 
-impl FusedIterator for Nodes<'_> {}
+impl<N: Unsigned, P: Unsigned, PO: Unsigned> FusedIterator for Nodes<'_, N, P, PO> {}
 
 /// Iterator over the ports of a graph, created by [`PortGraph::ports_iter`].
 #[derive(Clone, Debug, Default)]
-pub struct Ports<'a> {
-    pub(super) iter: std::iter::Enumerate<std::slice::Iter<'a, PortEntry>>,
+pub struct Ports<'a, N: Unsigned = u32, P: Unsigned = u32> {
+    pub(super) iter: std::iter::Enumerate<std::slice::Iter<'a, PortEntry<N>>>,
     pub(super) len: usize,
+    pub(super) _marker: PhantomData<P>,
 }
 
-impl Iterator for Ports<'_> {
-    type Item = PortIndex;
+impl<N: Unsigned, P: Unsigned> Iterator for Ports<'_, N, P> {
+    type Item = PortIndex<P>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.find_map(|(index, port_entry)| match port_entry {
-            PortEntry::Port(_) => {
+        self.iter.find_map(|(index, port_entry)| {
+            port_entry.as_meta().map(|_| {
                 self.len -= 1;
-                Some(PortIndex::new(index))
-            }
-            _ => None,
+                PortIndex::<P>::new(index)
+            })
         })
     }
 
@@ -293,16 +296,16 @@ impl Iterator for Ports<'_> {
     }
 }
 
-impl ExactSizeIterator for Ports<'_> {
+impl<N: Unsigned, P: Unsigned> ExactSizeIterator for Ports<'_, N, P> {
     fn len(&self) -> usize {
         self.len
     }
 }
 
-impl DoubleEndedIterator for Ports<'_> {
+impl<N: Unsigned, P: Unsigned> DoubleEndedIterator for Ports<'_, N, P> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((index, port_entry)) = self.iter.next_back() {
-            if let PortEntry::Port(_) = port_entry {
+            if !port_entry.is_free() {
                 self.len -= 1;
                 return Some(PortIndex::new(index));
             }
@@ -311,7 +314,7 @@ impl DoubleEndedIterator for Ports<'_> {
     }
 }
 
-impl FusedIterator for Ports<'_> {}
+impl<N: Unsigned, P: Unsigned> FusedIterator for Ports<'_, N, P> {}
 
 /// Iterator over the port offsets of a node. See [`PortGraph::input_offsets`],
 /// [`PortGraph::output_offsets`], and [`PortGraph::all_port_offsets`].
