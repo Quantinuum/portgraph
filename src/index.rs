@@ -424,14 +424,27 @@ mod serde_port_offset_impl {
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct BitField<U>(U);
 
+mod sealed {
+    /// Sealed supertrait to prevent external implementations of [`IndexBase`].
+    pub trait Sealed {}
+    impl Sealed for u8 {}
+    impl Sealed for u16 {}
+    impl Sealed for u32 {}
+    impl Sealed for u64 {}
+    impl Sealed for usize {}
+}
+
 /// Trait for unsigned integer types.
 ///
 /// This is a wrapper around the `num_traits::Unsigned`, along with additional
 /// bit logic traits that are typically implemented for unsigned integer types.
 ///
 /// Implementations are provided for `u8`, `u16`, `u32`, `u64`, and `usize`.
+///
+/// This trait is sealed and cannot be implemented outside of `portgraph`.
 pub trait IndexBase:
-    Copy
+    sealed::Sealed
+    + Copy
     + std::fmt::Debug
     + std::hash::Hash
     + Ord

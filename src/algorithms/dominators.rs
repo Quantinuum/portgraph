@@ -19,9 +19,10 @@ use std::cmp::Ordering;
 ///    ┗> d ┛
 ///
 /// ```
+/// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
+/// # type DominatorTree = ::portgraph::algorithms::DominatorTree<u32>;
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
-/// # use ::portgraph::algorithms::DominatorTree;
 /// let mut graph = PortGraph::with_capacity(5, 10);
 /// let a = graph.add_node(0,2);
 /// let b = graph.add_node(1,1);
