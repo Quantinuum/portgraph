@@ -15,24 +15,28 @@ use crate::{Direction, Hierarchy, NodeIndex, PortIndex, PortOffset};
 /// see [`crate::view::FlatRegion`]. Prefer using the flat variant when possible, as it is
 /// more efficient.
 #[derive(Debug)]
-pub struct Region<'g, G> {
+pub struct Region<'g, G: PortView> {
     /// The base graph
     graph: G,
     /// The root node of the region
-    region_root: NodeIndex,
+    region_root: NodeIndex<G::NodeIndexBase>,
     /// The graph's hierarchy
-    hierarchy: &'g Hierarchy,
+    hierarchy: &'g Hierarchy<G::NodeIndexBase>,
     /// Cache of the result of the [`is_descendant`] check.
-    is_descendant: RwLock<HashMap<NodeIndex, bool>>,
+    is_descendant: RwLock<HashMap<NodeIndex<G::NodeIndexBase>, bool>>,
 }
 
 impl<'g, G> Region<'g, G>
 where
-    G: Clone,
+    G: PortView + Clone,
 {
     /// Create a new [`Region`] looking at a `root` node and its descendants in
     /// a [`Hierarchy`].
-    pub fn new(graph: G, hierarchy: &'g Hierarchy, root: NodeIndex) -> Self {
+    pub fn new(
+        graph: G,
+        hierarchy: &'g Hierarchy<G::NodeIndexBase>,
+        root: NodeIndex<G::NodeIndexBase>,
+    ) -> Self {
         let mut is_descendant = HashMap::new();
         is_descendant.insert(root, false);
         Self {
@@ -46,7 +50,7 @@ where
     /// Check if a node is a descendant of the root node.
     ///
     /// Caches the result of the check.
-    pub fn is_descendant(&self, node: NodeIndex) -> bool {
+    pub fn is_descendant(&self, node: NodeIndex<G::NodeIndexBase>) -> bool {
         if node == self.region_root {
             return true;
         }
@@ -95,7 +99,7 @@ where
     }
 
     /// Get the root node of the region.
-    pub fn region_root(&self) -> NodeIndex {
+    pub fn region_root(&self) -> NodeIndex<G::NodeIndexBase> {
         self.region_root
     }
 }
@@ -117,7 +121,7 @@ where
     }
 }
 
-impl<G: PartialEq> PartialEq for Region<'_, G> {
+impl<G: PortView + PartialEq> PartialEq for Region<'_, G> {
     fn eq(&self, other: &Self) -> bool {
         self.region_root == other.region_root
             && self.graph == other.graph
@@ -125,7 +129,7 @@ impl<G: PartialEq> PartialEq for Region<'_, G> {
     }
 }
 
-impl<G: Clone> Clone for Region<'_, G> {
+impl<G: PortView + Clone> Clone for Region<'_, G> {
     fn clone(&self) -> Self {
         // Clone the cache if it is not currently locked.
         // Otherwise, create a new empty cache.
@@ -146,15 +150,17 @@ impl<G> PortView for Region<'_, G>
 where
     G: PortView + Clone,
 {
+    type NodeIndexBase = G::NodeIndexBase;
+    type PortIndexBase = G::PortIndexBase;
     type PortOffsetBase = G::PortOffsetBase;
 
     #[inline(always)]
-    fn contains_node(&'_ self, node: NodeIndex) -> bool {
+    fn contains_node(&'_ self, node: NodeIndex<Self::NodeIndexBase>) -> bool {
         self.is_descendant(node)
     }
 
     #[inline(always)]
-    fn contains_port(&self, port: PortIndex) -> bool {
+    fn contains_port(&self, port: PortIndex<Self::PortIndexBase>) -> bool {
         let Some(node) = self.graph.port_node(port) else {
             return false;
         };
@@ -178,12 +184,12 @@ where
     }
 
     #[inline]
-    fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex> + Clone {
+    fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex<Self::NodeIndexBase>> + Clone {
         self.hierarchy.descendants(self.region_root)
     }
 
     #[inline]
-    fn ports_iter(&self) -> impl Iterator<Item = PortIndex> + Clone {
+    fn ports_iter(&self) -> impl Iterator<Item = PortIndex<Self::PortIndexBase>> + Clone {
         self.nodes_iter().flat_map(|n| self.graph.all_ports(n))
     }
 
@@ -198,18 +204,18 @@ where
 
     delegate! {
         to self.graph {
-            fn port_direction(&self, port: impl Into<PortIndex>) -> Option<Direction>;
-            fn port_node(&self, port: impl Into<PortIndex>) -> Option<NodeIndex>;
-            fn port_offset(&self, port: impl Into<PortIndex>) -> Option<crate::PortOffset<G::PortOffsetBase>>;
-            fn port_index(&self, node: NodeIndex, offset: crate::PortOffset<G::PortOffsetBase>) -> Option<PortIndex>;
-            fn ports(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortIndex> + Clone;
-            fn all_ports(&self, node: NodeIndex) -> impl Iterator<Item = PortIndex> + Clone;
-            fn input(&self, node: NodeIndex, offset: usize) -> Option<PortIndex>;
-            fn output(&self, node: NodeIndex, offset: usize) -> Option<PortIndex>;
-            fn num_ports(&self, node: NodeIndex, direction: Direction) -> usize;
-            fn port_offsets(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortOffset<G::PortOffsetBase>> + Clone;
-            fn all_port_offsets(&self, node: NodeIndex) -> impl Iterator<Item = PortOffset<G::PortOffsetBase>> + Clone;
-            fn node_port_capacity(&self, node: NodeIndex) -> usize;
+            fn port_direction(&self, port: impl Into<PortIndex<Self::PortIndexBase>>) -> Option<Direction>;
+            fn port_node(&self, port: impl Into<PortIndex<Self::PortIndexBase>>) -> Option<NodeIndex<Self::NodeIndexBase>>;
+            fn port_offset(&self, port: impl Into<PortIndex<Self::PortIndexBase>>) -> Option<PortOffset<Self::PortOffsetBase>>;
+            fn port_index(&self, node: NodeIndex<Self::NodeIndexBase>, offset: PortOffset<Self::PortOffsetBase>) -> Option<PortIndex<Self::PortIndexBase>>;
+            fn ports(&self, node: NodeIndex<Self::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = PortIndex<Self::PortIndexBase>> + Clone;
+            fn all_ports(&self, node: NodeIndex<Self::NodeIndexBase>) -> impl Iterator<Item = PortIndex<Self::PortIndexBase>> + Clone;
+            fn input(&self, node: NodeIndex<Self::NodeIndexBase>, offset: usize) -> Option<PortIndex<Self::PortIndexBase>>;
+            fn output(&self, node: NodeIndex<Self::NodeIndexBase>, offset: usize) -> Option<PortIndex<Self::PortIndexBase>>;
+            fn num_ports(&self, node: NodeIndex<Self::NodeIndexBase>, direction: Direction) -> usize;
+            fn port_offsets(&self, node: NodeIndex<Self::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = PortOffset<Self::PortOffsetBase>> + Clone;
+            fn all_port_offsets(&self, node: NodeIndex<Self::NodeIndexBase>) -> impl Iterator<Item = PortOffset<Self::PortOffsetBase>> + Clone;
+            fn node_port_capacity(&self, node: NodeIndex<Self::NodeIndexBase>) -> usize;
         }
     }
 }
@@ -222,8 +228,8 @@ where
 
     fn get_connections(
         &self,
-        from: NodeIndex,
-        to: NodeIndex,
+        from: NodeIndex<Self::NodeIndexBase>,
+        to: NodeIndex<Self::NodeIndexBase>,
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone {
         if self.is_descendant(from) && self.is_descendant(to) {
             Either::Left(self.graph.get_connections(from, to))
@@ -234,7 +240,7 @@ where
 
     fn port_links(
         &self,
-        port: PortIndex,
+        port: PortIndex<Self::PortIndexBase>,
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone {
         self.graph
             .port_links(port)
@@ -243,7 +249,7 @@ where
 
     fn links(
         &self,
-        node: NodeIndex,
+        node: NodeIndex<Self::NodeIndexBase>,
         direction: Direction,
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone {
         self.graph
@@ -253,7 +259,7 @@ where
 
     fn all_links(
         &self,
-        node: NodeIndex,
+        node: NodeIndex<Self::NodeIndexBase>,
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone {
         self.graph
             .all_links(node)
@@ -262,15 +268,18 @@ where
 
     fn neighbours(
         &self,
-        node: NodeIndex,
+        node: NodeIndex<Self::NodeIndexBase>,
         direction: Direction,
-    ) -> impl Iterator<Item = NodeIndex> + Clone {
+    ) -> impl Iterator<Item = NodeIndex<Self::NodeIndexBase>> + Clone {
         self.graph
             .neighbours(node, direction)
             .filter(|&n| self.contains_node(n))
     }
 
-    fn all_neighbours(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + Clone {
+    fn all_neighbours(
+        &self,
+        node: NodeIndex<Self::NodeIndexBase>,
+    ) -> impl Iterator<Item = NodeIndex<Self::NodeIndexBase>> + Clone {
         self.graph
             .all_neighbours(node)
             .filter(|&n| self.contains_node(n))
@@ -289,7 +298,7 @@ where
 {
     fn subports(
         &self,
-        node: NodeIndex,
+        node: NodeIndex<Self::NodeIndexBase>,
         direction: Direction,
     ) -> impl Iterator<Item = Self::LinkEndpoint> + Clone {
         self.graph
@@ -297,7 +306,10 @@ where
             .filter(|&p| self.contains_endpoint(p))
     }
 
-    fn all_subports(&self, node: NodeIndex) -> impl Iterator<Item = Self::LinkEndpoint> + Clone {
+    fn all_subports(
+        &self,
+        node: NodeIndex<Self::NodeIndexBase>,
+    ) -> impl Iterator<Item = Self::LinkEndpoint> + Clone {
         self.graph
             .all_subports(node)
             .filter(|&p| self.contains_endpoint(p))
@@ -317,9 +329,12 @@ mod test {
     use itertools::Itertools;
 
     use crate::multiportgraph::SubportIndex;
-    use crate::{Hierarchy, LinkMut, MultiPortGraph, PortGraph, PortMut};
+    use crate::{Hierarchy, LinkMut, PortMut};
 
     use super::*;
+
+    type PortGraph = crate::PortGraph<u32, u32, u16>;
+    type MultiPortGraph = crate::MultiPortGraph<u32, u32, u16>;
 
     #[test]
     fn single_node_region() {

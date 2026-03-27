@@ -22,8 +22,10 @@ const INDENTATION_SEPARATOR: &str = "    ";
 /// # Example
 ///
 /// ```rust
-/// # use portgraph::{LinkMut, PortGraph, PortMut, PortView, Hierarchy};
+/// # use portgraph::{LinkMut, PortMut, PortView};
 /// # use portgraph::render::MermaidFormat;
+/// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
+/// # type Hierarchy = ::portgraph::Hierarchy<u32>;
 /// let mut graph: PortGraph = PortGraph::new();
 /// let n1 = graph.add_node(3, 2);
 /// let n2 = graph.add_node(0, 1);
@@ -36,10 +38,11 @@ const INDENTATION_SEPARATOR: &str = "    ";
 ///
 /// let mermaid = graph.mermaid_format().with_hierarchy(&hier).finish();
 /// ```
+#[allow(clippy::type_complexity)]
 pub struct MermaidFormatter<'g, G: LinkView> {
     graph: &'g G,
-    forest: Option<&'g Hierarchy>,
-    node_style: Option<Box<dyn FnMut(NodeIndex) -> NodeStyle + 'g>>,
+    forest: Option<&'g Hierarchy<G::NodeIndexBase>>,
+    node_style: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> NodeStyle + 'g>>,
     #[allow(clippy::type_complexity)]
     edge_style: Option<Box<dyn FnMut(G::LinkEndpoint, G::LinkEndpoint) -> EdgeStyle + 'g>>,
 }
@@ -59,13 +62,16 @@ where
     }
 
     /// Set the `Hierarchy` to use for the graph.
-    pub fn with_hierarchy(mut self, forest: &'g Hierarchy) -> Self {
+    pub fn with_hierarchy(mut self, forest: &'g Hierarchy<G::NodeIndexBase>) -> Self {
         self.forest = Some(forest);
         self
     }
 
     /// Set the function to use to get the style of a node.
-    pub fn with_node_style(mut self, node_style: impl FnMut(NodeIndex) -> NodeStyle + 'g) -> Self {
+    pub fn with_node_style(
+        mut self,
+        node_style: impl FnMut(NodeIndex<G::NodeIndexBase>) -> NodeStyle + 'g,
+    ) -> Self {
         self.node_style = Some(Box::new(node_style));
         self
     }
@@ -83,7 +89,10 @@ where
     ///
     /// This is a convenience method to set the node and port styles based on the weight values.
     /// It overrides any previous node or port style set.
-    pub fn with_weights<'w, N, P>(self, weights: &'w Weights<N, P>) -> Self
+    pub fn with_weights<'w, N, P>(
+        self,
+        weights: &'w Weights<N, P, G::NodeIndexBase, G::PortIndexBase>,
+    ) -> Self
     where
         'w: 'g,
         N: Display + Clone,
@@ -104,7 +113,7 @@ where
     /// Visit each tree of nodes and encode them in the mermaid format.
     fn explore_forest(&self, mmd: &mut MermaidBuilder<'g, G>) {
         // A stack of exploration steps to take.
-        let mut exploration_stack: Vec<ExplorationStep> = Vec::new();
+        let mut exploration_stack: Vec<ExplorationStep<G::NodeIndexBase>> = Vec::new();
 
         // Add all the root nodes in the hierarchy to the stack.
         for root in self.graph.nodes_iter().filter(|n| self.is_root(*n)) {
@@ -114,12 +123,17 @@ where
         // Delay emitting edges until we are in a region that is the parent of both the source and target nodes.
         #[allow(clippy::type_complexity)]
         let mut edges: HashMap<
-            Option<NodeIndex>,
-            Vec<(NodeIndex, G::LinkEndpoint, NodeIndex, G::LinkEndpoint)>,
+            Option<NodeIndex<G::NodeIndexBase>>,
+            Vec<(
+                NodeIndex<G::NodeIndexBase>,
+                G::LinkEndpoint,
+                NodeIndex<G::NodeIndexBase>,
+                G::LinkEndpoint,
+            )>,
         > = HashMap::new();
 
         // An efficient structure for retrieving the lowest common ancestor of two nodes.
-        let lca: Option<LCA> = self.forest.map(|f| lca(self.graph, f));
+        let lca: Option<LCA<G::NodeIndexBase>> = self.forest.map(|f| lca(self.graph, f));
 
         while let Some(instr) = exploration_stack.pop() {
             match instr {
@@ -170,7 +184,7 @@ where
     }
 
     /// Helper function to check if a node is a leaf in the hierarchy.
-    fn is_root(&self, node: NodeIndex) -> bool {
+    fn is_root(&self, node: NodeIndex<G::NodeIndexBase>) -> bool {
         let Some(f) = &self.forest else {
             return true;
         };
@@ -181,22 +195,25 @@ where
     }
 
     /// Helper function to check if a node is a leaf in the hierarchy.
-    fn is_leaf(&self, node: NodeIndex) -> bool {
+    fn is_leaf(&self, node: NodeIndex<G::NodeIndexBase>) -> bool {
         self.forest.map_or(true, |f| !f.has_children(node))
     }
 
     /// Returns the children of a node in the hierarchy.
-    fn node_children(&self, node: NodeIndex) -> impl DoubleEndedIterator<Item = NodeIndex> + '_ {
+    fn node_children(
+        &self,
+        node: NodeIndex<G::NodeIndexBase>,
+    ) -> impl DoubleEndedIterator<Item = NodeIndex<G::NodeIndexBase>> + '_ {
         self.forest.iter().flat_map(move |f| f.children(node))
     }
 }
 
 /// A set of instructions to queue while exploring hierarchical graphs in [`MermaidFormatter::explore_tree`].
-enum ExplorationStep {
+enum ExplorationStep<N: crate::index::IndexBase> {
     /// Explore a new node and its children.
-    ExploreNode { node: NodeIndex },
+    ExploreNode { node: NodeIndex<N> },
     /// Finish the current subgraph, and continue with the parent node.
-    ExitSubgraph { subgraph: NodeIndex },
+    ExitSubgraph { subgraph: NodeIndex<N> },
 }
 
 /// A trait for encoding a graph in mermaid format.
@@ -211,8 +228,10 @@ pub trait MermaidFormat: LinkView + Sized {
     /// # Example
     ///
     /// ```rust
-    /// # use portgraph::{LinkMut, PortGraph, PortMut, PortView, Hierarchy};
+    /// # use portgraph::{LinkMut, PortMut, PortView};
     /// # use portgraph::render::MermaidFormat;
+    /// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
+    /// # type Hierarchy = ::portgraph::Hierarchy<u32>;
     /// let mut graph: PortGraph = PortGraph::new();
     /// let n1 = graph.add_node(3, 2);
     /// let n2 = graph.add_node(0, 1);
@@ -263,13 +282,14 @@ where
 ///
 /// Splitting this from the `MermaidFormatter` allows us to mutate this freely
 /// while keeping references to the graph.
+#[allow(clippy::type_complexity)]
 struct MermaidBuilder<'g, G: LinkView> {
     /// The mmd definition being built.
     output: String,
     /// The current indentation level.
     indent: usize,
     /// The styling function for nodes.
-    node_style: Option<Box<dyn FnMut(NodeIndex) -> NodeStyle + 'g>>,
+    node_style: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> NodeStyle + 'g>>,
     /// The styling function for edges.
     #[allow(clippy::type_complexity)]
     edge_style: Option<Box<dyn FnMut(G::LinkEndpoint, G::LinkEndpoint) -> EdgeStyle + 'g>>,
@@ -279,7 +299,7 @@ impl<'g, G: LinkView> MermaidBuilder<'g, G> {
     /// Start a new flowchart definition.
     #[allow(clippy::type_complexity)]
     pub fn init(
-        node_style: Option<Box<dyn FnMut(NodeIndex) -> NodeStyle + 'g>>,
+        node_style: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> NodeStyle + 'g>>,
         edge_style: Option<Box<dyn FnMut(G::LinkEndpoint, G::LinkEndpoint) -> EdgeStyle + 'g>>,
     ) -> Self {
         Self {
@@ -319,7 +339,7 @@ impl<'g, G: LinkView> MermaidBuilder<'g, G> {
     }
 
     /// Adds a leaf node to the mermaid definition.
-    pub fn add_leaf(&mut self, node: NodeIndex) {
+    pub fn add_leaf(&mut self, node: NodeIndex<G::NodeIndexBase>) {
         let style = self
             .node_style
             .as_mut()
@@ -350,7 +370,7 @@ impl<'g, G: LinkView> MermaidBuilder<'g, G> {
     /// Call `end_subgraph` to close the block.
     ///
     /// Blocks may be nested.
-    pub fn start_subgraph(&mut self, node: NodeIndex) {
+    pub fn start_subgraph(&mut self, node: NodeIndex<G::NodeIndexBase>) {
         let style = self
             .node_style
             .as_mut()
@@ -393,9 +413,9 @@ impl<'g, G: LinkView> MermaidBuilder<'g, G> {
     /// Adds an edge to the mermaid definition.
     pub fn add_link(
         &mut self,
-        src_node: NodeIndex,
+        src_node: NodeIndex<G::NodeIndexBase>,
         src: G::LinkEndpoint,
-        tgt_node: NodeIndex,
+        tgt_node: NodeIndex<G::NodeIndexBase>,
         tgt: G::LinkEndpoint,
     ) {
         let style = self

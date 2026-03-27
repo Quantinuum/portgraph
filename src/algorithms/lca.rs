@@ -1,5 +1,6 @@
 //! Lowest common ancestor algorithm on hierarchy forests.
 
+use crate::index::IndexBase;
 use crate::{Hierarchy, NodeIndex, PortView, UnmanagedDenseMap};
 
 /// Constructs a data structure that allows efficient queries of the lowest
@@ -11,29 +12,32 @@ use crate::{Hierarchy, NodeIndex, PortView, UnmanagedDenseMap};
 /// This algorithm is based on binary lifting. The precomputation takes
 /// `O(n log n)` time, where `n` is the number of nodes in the hierarchy.
 /// Each `LCA::lca` query takes `O(log n)` time.
-pub fn lca(graph: impl PortView, hierarchy: &Hierarchy) -> LCA {
+pub fn lca<N: IndexBase>(
+    graph: impl PortView<NodeIndexBase = N>,
+    hierarchy: &Hierarchy<N>,
+) -> LCA<N> {
     LCA::new(graph, hierarchy)
 }
 
 /// A precomputed data structure for lowest common ancestor queries between
 /// nodes in a hierarchy.
 #[derive(Debug, Default, Clone)]
-pub struct LCA {
+pub struct LCA<N: IndexBase = u32> {
     /// For each node, stores the timestamp of the first visit in a depth-first
     /// traversal of the hierarchy.
-    first_visit: UnmanagedDenseMap<NodeIndex, usize>,
+    first_visit: UnmanagedDenseMap<NodeIndex<N>, usize>,
     /// For each node, stores the timestamp of the last visit in a depth-first
     /// traversal of the hierarchy.
-    last_visit: UnmanagedDenseMap<NodeIndex, usize>,
+    last_visit: UnmanagedDenseMap<NodeIndex<N>, usize>,
     /// For each node, stores the 1st, 2nd, 4th, 8th, ... ancestor.
-    climb_nodes: UnmanagedDenseMap<NodeIndex, Vec<NodeIndex>>,
+    climb_nodes: UnmanagedDenseMap<NodeIndex<N>, Vec<NodeIndex<N>>>,
 }
 
-impl LCA {
+impl<N: IndexBase> LCA<N> {
     /// Initializes the lowest common ancestor data structure.
     ///
     /// Complexity: O(n log n)
-    pub fn new(graph: impl PortView, hierarchy: &Hierarchy) -> Self {
+    pub fn new(graph: impl PortView<NodeIndexBase = N>, hierarchy: &Hierarchy<N>) -> Self {
         let capacity = graph.node_capacity();
         let mut lca = LCA {
             first_visit: UnmanagedDenseMap::with_capacity(capacity),
@@ -52,19 +56,19 @@ impl LCA {
             if !hierarchy.is_root(root) {
                 continue;
             }
-            stack.push(DFSState::Visit {
+            stack.push(DFSState::<N>::Visit {
                 node: root,
                 parent: None,
             });
             while let Some(state) = stack.pop() {
                 match state {
-                    DFSState::Visit { node, parent } => {
+                    DFSState::<N>::Visit { node, parent } => {
                         lca.first_visit[node] = timestamp;
                         timestamp += 1;
 
                         // Compute the climb nodes.
                         // That is, the 1st, 2nd, 4th, 8th, ... ancestor.
-                        let climb: Vec<NodeIndex> = (0..)
+                        let climb: Vec<NodeIndex<N>> = (0..)
                             .scan(parent, |prev, i| {
                                 // The 2^i ancestor of `node`.
                                 let ith_parent = (*prev)?;
@@ -76,15 +80,15 @@ impl LCA {
                             lca.climb_nodes[node] = climb;
                         }
 
-                        stack.push(DFSState::Finish { node });
+                        stack.push(DFSState::<N>::Finish { node });
                         for child in hierarchy.children(node) {
-                            stack.push(DFSState::Visit {
+                            stack.push(DFSState::<N>::Visit {
                                 node: child,
                                 parent: Some(node),
                             });
                         }
                     }
-                    DFSState::Finish { node } => {
+                    DFSState::<N>::Finish { node } => {
                         lca.last_visit[node] = timestamp;
                         timestamp += 1;
                     }
@@ -100,14 +104,14 @@ impl LCA {
     /// If `a` and `b` are the same node, returns `true`.
     ///
     /// Complexity: O(1)
-    pub fn is_ancestor(&self, a: NodeIndex, b: NodeIndex) -> bool {
+    pub fn is_ancestor(&self, a: NodeIndex<N>, b: NodeIndex<N>) -> bool {
         self.first_visit[a] <= self.first_visit[b] && self.last_visit[a] >= self.last_visit[b]
     }
 
     /// Returns the root of the hierarchy that contains the given node.
     ///
     /// Complexity: O(log n)
-    pub fn root(&self, node: NodeIndex) -> NodeIndex {
+    pub fn root(&self, node: NodeIndex<N>) -> NodeIndex<N> {
         let mut u = node;
         while let Some(&v) = self.climb_nodes[u].last() {
             u = v;
@@ -120,7 +124,7 @@ impl LCA {
     /// If the nodes are not in the same tree, returns `None`.
     ///
     /// Complexity: O(log n)
-    pub fn lca(&self, a: NodeIndex, b: NodeIndex) -> Option<NodeIndex> {
+    pub fn lca(&self, a: NodeIndex<N>, b: NodeIndex<N>) -> Option<NodeIndex<N>> {
         if self.is_ancestor(a, b) {
             return Some(a);
         }
@@ -173,22 +177,27 @@ impl LCA {
 /// States for the depth-first search ran during the precomputation of the
 /// LCA data structure.
 #[derive(Debug, Clone, Copy, Hash)]
-enum DFSState {
+enum DFSState<N: IndexBase> {
     /// Visit a node for the first time.
     Visit {
-        node: NodeIndex,
-        parent: Option<NodeIndex>,
+        node: NodeIndex<N>,
+        parent: Option<NodeIndex<N>>,
     },
     /// Return from visiting a node.
-    Finish { node: NodeIndex },
+    Finish { node: NodeIndex<N> },
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{PortGraph, PortMut};
+    use crate::PortMut;
 
-    use super::*;
     use rstest::{fixture, rstest};
+
+    type PortGraph = crate::PortGraph<u32, u32, u16>;
+    type Hierarchy = crate::Hierarchy<u32>;
+    type NodeIndex = crate::NodeIndex<u32>;
+    #[allow(clippy::upper_case_acronyms)]
+    type LCA = super::LCA<u32>;
 
     /// A simple hierarchy with some nodes and edges.
     #[fixture]

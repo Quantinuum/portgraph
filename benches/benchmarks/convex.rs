@@ -2,7 +2,6 @@ use criterion::{criterion_group, Criterion};
 use itertools::Itertools;
 use portgraph::algorithms::{LineConvexChecker, TopoConvexChecker};
 use portgraph::PortView;
-use portgraph::{NodeIndex, PortGraph};
 
 use crate::helpers::*;
 

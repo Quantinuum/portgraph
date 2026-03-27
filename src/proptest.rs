@@ -9,12 +9,17 @@ use crate::{
 };
 use proptest::prelude::*;
 
+/// Default PortGraph type for property testing
+type DefaultPortGraph = PortGraph<u32, u32, u16>;
+/// Default MultiPortGraph type for property testing
+type DefaultMultiPortGraph = MultiPortGraph<u32, u32, u16>;
+
 #[derive(Debug, Clone, Copy)]
 struct Edge {
-    src_v: NodeIndex,
-    target_v: NodeIndex,
-    src_p: PortOffset,
-    target_p: PortOffset,
+    src_v: NodeIndex<u32>,
+    target_v: NodeIndex<u32>,
+    src_p: PortOffset<u16>,
+    target_p: PortOffset<u16>,
 }
 prop_compose! {
     /// A random set of edges for a portgraph.
@@ -26,10 +31,10 @@ prop_compose! {
     ) -> Vec<Edge> {
         out_ports.into_iter().zip(in_ports).map(|((src_v, src_p), (target_v, target_p))| {
             Edge {
-                src_v: NodeIndex::new(src_v),
-                target_v: NodeIndex::new(target_v),
-                src_p: PortOffset::new_outgoing(src_p),
-                target_p: PortOffset::new_incoming(target_p),
+                src_v: NodeIndex::<u32>::new(src_v),
+                target_v: NodeIndex::<u32>::new(target_v),
+                src_p: PortOffset::<u16>::new_outgoing(src_p),
+                target_p: PortOffset::<u16>::new_incoming(target_p),
             }
         }).collect()
     }
@@ -45,10 +50,10 @@ prop_compose! {
         // edges directly. Might make shrinking slightly more difficult.
         out_ports.into_iter().zip(in_ports).map(|((src_v, src_p), (target_v, target_p))| {
             Edge {
-                src_v: NodeIndex::new(src_v),
-                target_v: NodeIndex::new(target_v),
-                src_p: PortOffset::new_outgoing(src_p),
-                target_p: PortOffset::new_incoming(target_p),
+                src_v: NodeIndex::<u32>::new(src_v),
+                target_v: NodeIndex::<u32>::new(target_v),
+                src_p: PortOffset::<u16>::new_outgoing(src_p),
+                target_p: PortOffset::<u16>::new_incoming(target_p),
             }
         }).collect()
     }
@@ -61,8 +66,8 @@ prop_compose! {
     /// incoming and outgoing ports at ever node, and at most `max_n_edges`.
     pub fn gen_portgraph(max_n_nodes: usize, max_n_ports: usize, max_n_edges: usize)(
         edges in gen_unique_edges(max_n_nodes, max_n_ports, max_n_edges)
-    ) -> PortGraph {
-        let mut g: PortGraph = graph_from_edges(&edges);
+    ) -> DefaultPortGraph {
+        let mut g: DefaultPortGraph = graph_from_edges(&edges);
         ensure_non_empty(&mut g);
         g
     }
@@ -75,8 +80,8 @@ prop_compose! {
     /// incoming and outgoing ports at ever node, and at most `max_n_edges`.
     pub fn gen_multiportgraph(max_n_nodes: usize, max_n_ports: usize, max_n_edges: usize)(
         edges in gen_edges(max_n_nodes, max_n_ports, max_n_edges)
-    ) -> MultiPortGraph {
-        let mut g: MultiPortGraph = graph_from_edges(&edges);
+    ) -> DefaultMultiPortGraph {
+        let mut g: DefaultMultiPortGraph = graph_from_edges(&edges);
         ensure_non_empty(&mut g);
         g
     }
@@ -97,9 +102,9 @@ prop_compose! {
 ///     }
 /// }
 /// ```
-pub fn gen_node_index<G>(g: G) -> impl Strategy<Value = (PortGraph, NodeIndex)>
+pub fn gen_node_index<G>(g: G) -> impl Strategy<Value = (DefaultPortGraph, NodeIndex<u32>)>
 where
-    G: Strategy<Value = PortGraph>,
+    G: Strategy<Value = DefaultPortGraph>,
 {
     g.prop_flat_map(move |g| {
         let node_count = g.node_count();
@@ -178,7 +183,7 @@ impl Default for GenPortGraphParams {
     }
 }
 
-impl Arbitrary for PortGraph {
+impl Arbitrary for DefaultPortGraph {
     type Parameters = GenPortGraphParams;
     type Strategy = BoxedStrategy<Self>;
 
@@ -187,7 +192,7 @@ impl Arbitrary for PortGraph {
     }
 }
 
-impl Arbitrary for MultiPortGraph {
+impl Arbitrary for DefaultMultiPortGraph {
     type Parameters = GenPortGraphParams;
     type Strategy = BoxedStrategy<Self>;
 

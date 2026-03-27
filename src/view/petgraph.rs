@@ -31,8 +31,8 @@ impl From<crate::Direction> for petgraph::Direction {
     }
 }
 
-impl petgraph::visit::NodeRef for NodeIndex {
-    type NodeId = NodeIndex;
+impl petgraph::visit::NodeRef for NodeIndex<u32> {
+    type NodeId = NodeIndex<u32>;
     type Weight = ();
 
     fn id(&self) -> Self::NodeId {
@@ -57,7 +57,7 @@ macro_rules! impl_petgraph_traits {
     ($graph:ty, [$($args:tt)*]) => {impl_petgraph_traits!($graph, [$($args)*] where );};
     ($graph:ty, [$($args:tt)*] where $($where:tt)*) => {
         impl<$($args)*> petgraph::visit::GraphBase for $graph where $($where)* {
-            type NodeId = NodeIndex;
+            type NodeId = NodeIndex<u32>;
             type EdgeId = (
                 <$graph as LinkView>::LinkEndpoint,
                 <$graph as LinkView>::LinkEndpoint,
@@ -84,7 +84,7 @@ macro_rules! impl_petgraph_traits {
             }
 
             fn from_index(&self, ix: usize) -> Self::NodeId {
-                NodeIndex::new(ix)
+                NodeIndex::<u32>::new(ix)
             }
         }
 
@@ -100,7 +100,7 @@ macro_rules! impl_petgraph_traits {
         }
 
         impl<'g, $($args)*> petgraph::visit::IntoNodeIdentifiers for &'g $graph where $($where)* {
-            type NodeIdentifiers = Box<dyn Iterator<Item = NodeIndex> + 'g>;
+            type NodeIdentifiers = Box<dyn Iterator<Item = NodeIndex<u32>> + 'g>;
 
             fn node_identifiers(self) -> Self::NodeIdentifiers {
                 Box::new(self.nodes_iter())
@@ -108,8 +108,8 @@ macro_rules! impl_petgraph_traits {
         }
 
         impl<'g, $($args)*> petgraph::visit::IntoNodeReferences for &'g $graph where $($where)* {
-            type NodeRef = NodeIndex;
-            type NodeReferences = Box<dyn Iterator<Item = NodeIndex> + 'g>;
+            type NodeRef = NodeIndex<u32>;
+            type NodeReferences = Box<dyn Iterator<Item = NodeIndex<u32>> + 'g>;
 
             fn node_references(self) -> Self::NodeReferences {
                 Box::new(self.nodes_iter())
@@ -117,7 +117,7 @@ macro_rules! impl_petgraph_traits {
         }
 
         impl<'g, $($args)*> petgraph::visit::IntoNeighbors for &'g $graph where $($where)* {
-            type Neighbors = Box<dyn Iterator<Item = NodeIndex> + 'g>;
+            type Neighbors = Box<dyn Iterator<Item = NodeIndex<u32>> + 'g>;
 
             fn neighbors(self, n: Self::NodeId) -> Self::Neighbors {
                 Box::new(self.output_neighbours(n))
@@ -125,7 +125,7 @@ macro_rules! impl_petgraph_traits {
         }
 
         impl<'g, $($args)*> petgraph::visit::IntoNeighborsDirected for &'g $graph where $($where)* {
-            type NeighborsDirected = Box<dyn Iterator<Item = NodeIndex> + 'g>;
+            type NeighborsDirected = Box<dyn Iterator<Item = NodeIndex<u32>> + 'g>;
 
             fn neighbors_directed(
                 self,
@@ -261,66 +261,66 @@ macro_rules! impl_visit_sparse {
     };
 }
 
-impl_petgraph_traits!(PortGraph);
-impl_petgraph_traits!(MultiPortGraph);
-impl_petgraph_traits!(FilteredGraph<G, NodeFilter<Ctx>, LinkFilter<Ctx>, Ctx>, [G, Ctx]
+impl_petgraph_traits!(PortGraph<u32, u32, u16>);
+impl_petgraph_traits!(MultiPortGraph<u32, u32, u16>);
+impl_petgraph_traits!(FilteredGraph<G, NodeFilter<Ctx, G::NodeIndexBase>, LinkFilter<Ctx, G::PortIndexBase>, Ctx>, [G, Ctx]
     where
-        G: LinkView + Clone,
+        G: LinkView<NodeIndexBase = u32, PortIndexBase = u32> + Clone,
         <G as LinkView>::LinkEndpoint: Eq
 );
 impl_petgraph_traits!(Region<'graph, G>, ['graph, G]
     where
-        G: LinkView + Clone,
+        G: LinkView<NodeIndexBase = u32, PortIndexBase = u32> + Clone,
         <G as LinkView>::LinkEndpoint: Eq
 );
 impl_petgraph_traits!(FlatRegion<'graph, G>, ['graph, G]
     where
-        G: LinkView + Clone,
+        G: LinkView<NodeIndexBase = u32, PortIndexBase = u32> + Clone,
         <G as LinkView>::LinkEndpoint: Eq
 );
 impl_petgraph_traits!(Subgraph<G>, [G]
     where
-        G: LinkView + Clone,
+        G: LinkView<NodeIndexBase = u32, PortIndexBase = u32> + Clone,
         <G as LinkView>::LinkEndpoint: Eq
 );
 
-impl_visit_dense!(PortGraph);
-impl_visit_dense!(MultiPortGraph);
-impl_visit_sparse!(FilteredGraph<G, NodeFilter<Ctx>, LinkFilter<Ctx>, Ctx>, [G, Ctx]
+impl_visit_dense!(PortGraph<u32, u32, u16>);
+impl_visit_dense!(MultiPortGraph<u32, u32, u16>);
+impl_visit_sparse!(FilteredGraph<G, NodeFilter<Ctx, G::NodeIndexBase>, LinkFilter<Ctx, G::PortIndexBase>, Ctx>, [G, Ctx]
     where
-        G: LinkView + Clone,
+        G: LinkView<NodeIndexBase = u32, PortIndexBase = u32> + Clone,
         <G as LinkView>::LinkEndpoint: Eq
 );
 impl_visit_sparse!(Region<'graph, G>, ['graph, G]
     where
-        G: LinkView + Clone,
+        G: LinkView<NodeIndexBase = u32, PortIndexBase = u32> + Clone,
         <G as LinkView>::LinkEndpoint: Eq
 );
 impl_visit_sparse!(FlatRegion<'graph, G>, ['graph, G]
     where
-        G: LinkView + Clone,
+        G: LinkView<NodeIndexBase = u32, PortIndexBase = u32> + Clone,
         <G as LinkView>::LinkEndpoint: Eq
 );
 impl_visit_sparse!(Subgraph<G>, [G]
     where
-        G: LinkView + Clone,
+        G: LinkView<NodeIndexBase = u32, PortIndexBase = u32> + Clone,
         <G as LinkView>::LinkEndpoint: Eq
 );
 
-impl petgraph::visit::VisitMap<NodeIndex> for BitVec {
-    fn visit(&mut self, a: NodeIndex) -> bool {
+impl petgraph::visit::VisitMap<NodeIndex<u32>> for BitVec {
+    fn visit(&mut self, a: NodeIndex<u32>) -> bool {
         let is_visited = self.is_visited(&a);
-        <Self as SecondaryMap<NodeIndex, bool>>::set(self, a, true);
+        <Self as SecondaryMap<NodeIndex<u32>, bool>>::set(self, a, true);
         is_visited
     }
 
-    fn is_visited(&self, a: &NodeIndex) -> bool {
-        *<Self as SecondaryMap<NodeIndex, bool>>::get(self, *a)
+    fn is_visited(&self, a: &NodeIndex<u32>) -> bool {
+        *<Self as SecondaryMap<NodeIndex<u32>, bool>>::get(self, *a)
     }
 
-    fn unvisit(&mut self, a: NodeIndex) -> bool {
+    fn unvisit(&mut self, a: NodeIndex<u32>) -> bool {
         let is_visited = self.is_visited(&a);
-        <Self as SecondaryMap<NodeIndex, bool>>::set(self, a, false);
+        <Self as SecondaryMap<NodeIndex<u32>, bool>>::set(self, a, false);
         is_visited
     }
 }
@@ -331,8 +331,8 @@ impl petgraph::visit::VisitMap<NodeIndex> for BitVec {
 /// Used to implement petgraph's `EdgeRef` trait.
 #[derive(Debug, Clone, Copy)]
 pub struct EdgeRef<P> {
-    from_node: NodeIndex,
-    to_node: NodeIndex,
+    from_node: NodeIndex<u32>,
+    to_node: NodeIndex<u32>,
     edge: (P, P),
 }
 
@@ -340,7 +340,7 @@ impl<P> petgraph::visit::EdgeRef for EdgeRef<P>
 where
     P: Copy,
 {
-    type NodeId = NodeIndex;
+    type NodeId = NodeIndex<u32>;
     type EdgeId = (P, P);
     type Weight = ();
 
@@ -364,9 +364,9 @@ where
 /// Iterator over the edges of a portgraph.
 ///
 /// Used for compatibility with petgraph.
-pub struct EdgeRefs<'g, G: LinkView> {
+pub struct EdgeRefs<'g, G: LinkView<NodeIndexBase = u32, PortIndexBase = u32>> {
     graph: &'g G,
-    ports: Box<dyn Iterator<Item = PortIndex> + 'g>,
+    ports: Box<dyn Iterator<Item = PortIndex<u32>> + 'g>,
     #[allow(clippy::type_complexity)]
     links: Option<Box<dyn Iterator<Item = (G::LinkEndpoint, G::LinkEndpoint)> + 'g>>,
     count: usize,
@@ -374,7 +374,7 @@ pub struct EdgeRefs<'g, G: LinkView> {
 
 impl<'g, G> EdgeRefs<'g, G>
 where
-    G: LinkView,
+    G: LinkView<NodeIndexBase = u32, PortIndexBase = u32>,
 {
     /// Create a new iterator over the edges of a portgraph.
     pub fn new(graph: &'g G) -> Self {
@@ -389,7 +389,7 @@ where
 
 impl<G> Iterator for EdgeRefs<'_, G>
 where
-    G: LinkView,
+    G: LinkView<NodeIndexBase = u32, PortIndexBase = u32>,
 {
     type Item = EdgeRef<G::LinkEndpoint>;
 
@@ -422,29 +422,29 @@ where
     }
 }
 
-impl<G: LinkView> ExactSizeIterator for EdgeRefs<'_, G> {
+impl<G: LinkView<NodeIndexBase = u32, PortIndexBase = u32>> ExactSizeIterator for EdgeRefs<'_, G> {
     #[inline]
     fn len(&self) -> usize {
         self.count
     }
 }
 
-impl<G: LinkView> FusedIterator for EdgeRefs<'_, G> {}
+impl<G: LinkView<NodeIndexBase = u32, PortIndexBase = u32>> FusedIterator for EdgeRefs<'_, G> {}
 
 /// Iterator over the edges of a node.
 ///
 /// Used for compatibility with petgraph.
-pub struct NodeEdgeRefs<'g, G: LinkView> {
+pub struct NodeEdgeRefs<'g, G: LinkView<NodeIndexBase = u32, PortIndexBase = u32>> {
     graph: &'g G,
     links: Box<dyn Iterator<Item = (G::LinkEndpoint, G::LinkEndpoint)> + 'g>,
 }
 
 impl<'g, G> NodeEdgeRefs<'g, G>
 where
-    G: LinkView,
+    G: LinkView<NodeIndexBase = u32, PortIndexBase = u32>,
 {
     /// Create a new iterator over the edges of a portgraph.
-    pub fn new(graph: &'g G, node: NodeIndex) -> Self {
+    pub fn new(graph: &'g G, node: NodeIndex<u32>) -> Self {
         Self {
             graph,
             links: Box::new(graph.all_links(node)),
@@ -452,7 +452,7 @@ where
     }
 
     /// Create a new iterator over the edges of a portgraph.
-    pub fn new_directed(graph: &'g G, node: NodeIndex, dir: crate::Direction) -> Self {
+    pub fn new_directed(graph: &'g G, node: NodeIndex<u32>, dir: crate::Direction) -> Self {
         Self {
             graph,
             links: Box::new(graph.links(node, dir)),
@@ -462,7 +462,7 @@ where
 
 impl<G> Iterator for NodeEdgeRefs<'_, G>
 where
-    G: LinkView,
+    G: LinkView<NodeIndexBase = u32, PortIndexBase = u32>,
 {
     type Item = EdgeRef<G::LinkEndpoint>;
 

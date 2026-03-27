@@ -2,6 +2,7 @@ use std::iter::FusedIterator;
 
 use bitvec::vec::BitVec;
 
+use crate::index::IndexBase;
 use crate::{Direction, LinkView, NodeIndex, PortGraph, PortIndex, PortView};
 
 /// Returns an iterator doing a post-order traversal of a spanning tree in a
@@ -24,6 +25,7 @@ use crate::{Direction, LinkView, NodeIndex, PortGraph, PortIndex, PortView};
 /// ```
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
+/// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
 /// let mut graph = PortGraph::new();
 ///
 /// let a = graph.add_node(0, 1);
@@ -49,11 +51,11 @@ use crate::{Direction, LinkView, NodeIndex, PortGraph, PortIndex, PortView};
 /// ```
 ///
 ///
-pub fn postorder(
-    graph: &PortGraph,
-    source: impl IntoIterator<Item = NodeIndex>,
+pub fn postorder<N: IndexBase, P: IndexBase, PO: IndexBase>(
+    graph: &PortGraph<N, P, PO>,
+    source: impl IntoIterator<Item = NodeIndex<N>>,
     direction: Direction,
-) -> PostOrder<'_> {
+) -> PostOrder<'_, N, P, PO> {
     PostOrder::new(graph, source, direction, None, None)
 }
 
@@ -81,6 +83,7 @@ pub fn postorder(
 /// ```
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
+/// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
 /// let mut graph = PortGraph::new();
 ///
 /// let a = graph.add_node(0, 1);
@@ -118,13 +121,13 @@ pub fn postorder(
 /// ```
 ///
 ///
-pub fn postorder_filtered<'graph>(
-    graph: &'graph PortGraph,
-    source: impl IntoIterator<Item = NodeIndex>,
+pub fn postorder_filtered<'graph, N: IndexBase, P: IndexBase, PO: IndexBase>(
+    graph: &'graph PortGraph<N, P, PO>,
+    source: impl IntoIterator<Item = NodeIndex<N>>,
     direction: Direction,
-    node_filter: impl FnMut(NodeIndex) -> bool + 'graph,
-    port_filter: impl FnMut(NodeIndex, PortIndex) -> bool + 'graph,
-) -> PostOrder<'graph> {
+    node_filter: impl FnMut(NodeIndex<N>) -> bool + 'graph,
+    port_filter: impl FnMut(NodeIndex<N>, PortIndex<P>) -> bool + 'graph,
+) -> PostOrder<'graph, N, P, PO> {
     PostOrder::new(
         graph,
         source,
@@ -137,9 +140,10 @@ pub fn postorder_filtered<'graph>(
 /// Iterator over a [`PortGraph`] in post-order.
 ///
 /// See [`postorder`] for more information.
-pub struct PostOrder<'graph> {
-    graph: &'graph PortGraph,
-    stack: Vec<NodeIndex>,
+#[allow(clippy::type_complexity)]
+pub struct PostOrder<'graph, N: IndexBase, P: IndexBase, PO: IndexBase> {
+    graph: &'graph PortGraph<N, P, PO>,
+    stack: Vec<NodeIndex<N>>,
     visited: BitVec,
     finished: BitVec,
     direction: Direction,
@@ -148,19 +152,20 @@ pub struct PostOrder<'graph> {
     nodes_seen: usize,
     /// A filter closure for the nodes to visit. If the closure returns false,
     /// the node is skipped.
-    node_filter: Option<Box<dyn FnMut(NodeIndex) -> bool + 'graph>>,
+    node_filter: Option<Box<dyn FnMut(NodeIndex<N>) -> bool + 'graph>>,
     /// A filter closure for the ports to visit. If the closure returns false,
     /// the port is skipped.
-    port_filter: Option<Box<dyn FnMut(NodeIndex, PortIndex) -> bool + 'graph>>,
+    port_filter: Option<Box<dyn FnMut(NodeIndex<N>, PortIndex<P>) -> bool + 'graph>>,
 }
 
-impl<'graph> PostOrder<'graph> {
+impl<'graph, N: IndexBase, P: IndexBase, PO: IndexBase> PostOrder<'graph, N, P, PO> {
+    #[allow(clippy::type_complexity)]
     fn new(
-        graph: &'graph PortGraph,
-        source: impl IntoIterator<Item = NodeIndex>,
+        graph: &'graph PortGraph<N, P, PO>,
+        source: impl IntoIterator<Item = NodeIndex<N>>,
         direction: Direction,
-        mut node_filter: Option<Box<dyn FnMut(NodeIndex) -> bool + 'graph>>,
-        port_filter: Option<Box<dyn FnMut(NodeIndex, PortIndex) -> bool + 'graph>>,
+        mut node_filter: Option<Box<dyn FnMut(NodeIndex<N>) -> bool + 'graph>>,
+        port_filter: Option<Box<dyn FnMut(NodeIndex<N>, PortIndex<P>) -> bool + 'graph>>,
     ) -> Self {
         let mut visited = BitVec::with_capacity(graph.node_capacity());
         visited.resize(graph.node_capacity(), false);
@@ -188,7 +193,7 @@ impl<'graph> PostOrder<'graph> {
 
     /// Returns `true` if the node should be ignored.
     #[inline]
-    fn ignore_node(&mut self, node: NodeIndex) -> bool {
+    fn ignore_node(&mut self, node: NodeIndex<N>) -> bool {
         !self
             .node_filter
             .as_mut()
@@ -197,7 +202,7 @@ impl<'graph> PostOrder<'graph> {
 
     /// Returns `true` if the port should be ignored.
     #[inline]
-    fn ignore_port(&mut self, node: NodeIndex, port: PortIndex) -> bool {
+    fn ignore_port(&mut self, node: NodeIndex<N>, port: PortIndex<P>) -> bool {
         !self
             .port_filter
             .as_mut()
@@ -205,8 +210,8 @@ impl<'graph> PostOrder<'graph> {
     }
 }
 
-impl Iterator for PostOrder<'_> {
-    type Item = NodeIndex;
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> Iterator for PostOrder<'_, N, P, PO> {
+    type Item = NodeIndex<N>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(next) = self.stack.last().copied() {
@@ -252,9 +257,9 @@ impl Iterator for PostOrder<'_> {
     }
 }
 
-impl FusedIterator for PostOrder<'_> {}
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> FusedIterator for PostOrder<'_, N, P, PO> {}
 
-impl std::fmt::Debug for PostOrder<'_> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for PostOrder<'_, N, P, PO> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PostOrder")
             .field("graph", &self.graph)
@@ -272,6 +277,8 @@ mod tests {
     use crate::{LinkMut, PortMut};
 
     use super::*;
+
+    type PortGraph = crate::PortGraph<u32, u32, u16>;
 
     #[test]
     fn postorder_tree() {

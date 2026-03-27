@@ -1,4 +1,4 @@
-use crate::{Direction, LinkView, NodeIndex, PortIndex, SecondaryMap};
+use crate::{Direction, LinkView, NodeIndex, PortIndex, PortView, SecondaryMap};
 use bitvec::prelude::BitVec;
 use smallvec::SmallVec;
 use std::{collections::VecDeque, fmt::Debug, iter::FusedIterator};
@@ -24,6 +24,7 @@ use std::{collections::VecDeque, fmt::Debug, iter::FusedIterator};
 /// ```
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
+/// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
 /// let mut graph: PortGraph = PortGraph::new();
 /// let node_a = graph.add_node(2, 2);
 /// let node_b = graph.add_node(2, 2);
@@ -37,11 +38,11 @@ use std::{collections::VecDeque, fmt::Debug, iter::FusedIterator};
 /// ```
 pub fn toposort<G, Map>(
     graph: G,
-    source: impl IntoIterator<Item = NodeIndex>,
+    source: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
     direction: Direction,
 ) -> TopoSort<'static, G, Map>
 where
-    Map: SecondaryMap<PortIndex, bool>,
+    Map: SecondaryMap<PortIndex<G::PortIndexBase>, bool>,
     G: LinkView,
 {
     TopoSort::new(graph, source, direction, None, None)
@@ -74,6 +75,7 @@ where
 /// ```
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
+/// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
 /// let mut graph: PortGraph = PortGraph::new();
 /// let node_a = graph.add_node(2, 2);
 /// let node_b = graph.add_node(2, 2);
@@ -94,13 +96,13 @@ where
 /// ```
 pub fn toposort_filtered<'f, G, Map>(
     graph: G,
-    source: impl IntoIterator<Item = NodeIndex>,
+    source: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
     direction: Direction,
-    node_filter: impl FnMut(NodeIndex) -> bool + 'f,
-    port_filter: impl FnMut(NodeIndex, PortIndex) -> bool + 'f,
+    node_filter: impl FnMut(NodeIndex<G::NodeIndexBase>) -> bool + 'f,
+    port_filter: impl FnMut(NodeIndex<G::NodeIndexBase>, PortIndex<G::PortIndexBase>) -> bool + 'f,
 ) -> TopoSort<'f, G, Map>
 where
-    Map: SecondaryMap<PortIndex, bool>,
+    Map: SecondaryMap<PortIndex<G::PortIndexBase>, bool>,
     G: LinkView,
 {
     TopoSort::new(
@@ -119,27 +121,34 @@ where
 /// Implements [Kahn's algorithm](https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm),
 /// tie-breaking within the same rank is done using a queue, so nodes that are
 /// discovered first are visited first.
-pub struct TopoSort<'f, G, Map = BitVec> {
+pub struct TopoSort<'f, G, Map = BitVec>
+where
+    G: PortView,
+{
     graph: G,
     visited_ports: Map,
     /// A VecDeque is used for the node list to produce a canonical ordering,
     /// as successors of nodes already have a canonical ordering due to ports.
-    candidate_nodes: VecDeque<NodeIndex>,
+    candidate_nodes: VecDeque<NodeIndex<G::NodeIndexBase>>,
     direction: Direction,
     /// The number of nodes already returned from the iterator.
     /// This is used to calculate the upper bound for the iterator's `size_hint`.
     nodes_seen: usize,
     /// A filter closure for the nodes to visit. If the closure returns false,
     /// the node is skipped.
-    node_filter: Option<Box<dyn FnMut(NodeIndex) -> bool + 'f>>,
+    #[allow(clippy::type_complexity)]
+    node_filter: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> bool + 'f>>,
     /// A filter closure for the ports to visit. If the closure returns false,
     /// the port is skipped.
-    port_filter: Option<Box<dyn FnMut(NodeIndex, PortIndex) -> bool + 'f>>,
+    #[allow(clippy::type_complexity)]
+    port_filter: Option<
+        Box<dyn FnMut(NodeIndex<G::NodeIndexBase>, PortIndex<G::PortIndexBase>) -> bool + 'f>,
+    >,
 }
 
 impl<'f, Map, G> TopoSort<'f, G, Map>
 where
-    Map: SecondaryMap<PortIndex, bool>,
+    Map: SecondaryMap<PortIndex<G::PortIndexBase>, bool>,
     G: LinkView,
 {
     /// Initialises a new topological sort of a portgraph in a specified direction
@@ -148,12 +157,15 @@ where
     /// See [`toposort`] and [`toposort_filtered`] for more information.
     ///
     /// If the default value of `Map` is not `false`, this requires O(#ports) time.
+    #[allow(clippy::type_complexity)]
     pub fn new(
         graph: G,
-        source: impl IntoIterator<Item = NodeIndex>,
+        source: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
         direction: Direction,
-        mut node_filter: Option<Box<dyn FnMut(NodeIndex) -> bool + 'f>>,
-        port_filter: Option<Box<dyn FnMut(NodeIndex, PortIndex) -> bool + 'f>>,
+        mut node_filter: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> bool + 'f>>,
+        port_filter: Option<
+            Box<dyn FnMut(NodeIndex<G::NodeIndexBase>, PortIndex<G::PortIndexBase>) -> bool + 'f>,
+        >,
     ) -> Self {
         let mut visited_ports: Map = SecondaryMap::new();
 
@@ -190,7 +202,7 @@ where
 
     /// Returns whether there are ports that have not been visited yet.
     /// If the iterator has seen all nodes this implies that there is a cycle.
-    pub fn ports_remaining(&self) -> impl Iterator<Item = PortIndex> + '_ {
+    pub fn ports_remaining(&self) -> impl Iterator<Item = PortIndex<G::PortIndexBase>> + '_ {
         self.graph
             .ports_iter()
             .filter(move |&p| !self.visited_ports.get(p))
@@ -199,7 +211,7 @@ where
     /// Add more source nodes to the iterator.
     ///
     /// Nodes that have already been yielded will not be returned again.
-    pub fn add_sources(&mut self, sources: impl IntoIterator<Item = NodeIndex>) {
+    pub fn add_sources(&mut self, sources: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>) {
         for node in sources.into_iter() {
             if self.ignore_node(node) {
                 continue;
@@ -227,7 +239,11 @@ where
 
     /// Checks if a node becomes ready once it is visited from `from_port`, i.e.
     /// it has been reached from all its linked ports.
-    fn becomes_ready(&mut self, node: NodeIndex, from_port: impl Into<PortIndex>) -> bool {
+    fn becomes_ready(
+        &mut self,
+        node: NodeIndex<G::NodeIndexBase>,
+        from_port: impl Into<PortIndex<G::PortIndexBase>>,
+    ) -> bool {
         let from_port = from_port.into();
         if self.ignore_node(node) {
             return false;
@@ -253,7 +269,7 @@ where
 
     /// Returns `true` if the node should be ignored.
     #[inline]
-    fn ignore_node(&mut self, node: NodeIndex) -> bool {
+    fn ignore_node(&mut self, node: NodeIndex<G::NodeIndexBase>) -> bool {
         !self
             .node_filter
             .as_mut()
@@ -262,7 +278,11 @@ where
 
     /// Returns `true` if the port should be ignored.
     #[inline]
-    fn ignore_port(&mut self, node: NodeIndex, port: PortIndex) -> bool {
+    fn ignore_port(
+        &mut self,
+        node: NodeIndex<G::NodeIndexBase>,
+        port: PortIndex<G::PortIndexBase>,
+    ) -> bool {
         !self
             .port_filter
             .as_mut()
@@ -272,10 +292,10 @@ where
 
 impl<Map, G> Iterator for TopoSort<'_, G, Map>
 where
-    Map: SecondaryMap<PortIndex, bool>,
+    Map: SecondaryMap<PortIndex<G::PortIndexBase>, bool>,
     G: LinkView,
 {
-    type Item = NodeIndex;
+    type Item = NodeIndex<G::NodeIndexBase>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.candidate_nodes.pop_front()?;
@@ -288,7 +308,7 @@ where
                 continue;
             }
 
-            let linked_ports: SmallVec<[PortIndex; 2]> = self
+            let linked_ports: SmallVec<[PortIndex<G::PortIndexBase>; 2]> = self
                 .graph
                 .port_links(port)
                 .map(|(_, next_port)| next_port.into())
@@ -318,7 +338,7 @@ where
 
 impl<Map, G> FusedIterator for TopoSort<'_, G, Map>
 where
-    Map: SecondaryMap<PortIndex, bool>,
+    Map: SecondaryMap<PortIndex<G::PortIndexBase>, bool>,
     G: LinkView,
 {
 }
@@ -326,7 +346,7 @@ where
 impl<Map, G> Debug for TopoSort<'_, G, Map>
 where
     Map: Debug,
-    G: Debug,
+    G: Debug + PortView,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TopoSort")
@@ -344,7 +364,10 @@ mod test {
 
     use super::*;
 
-    use crate::{Direction, LinkMut, MultiPortGraph, PortGraph, PortMut, PortView};
+    use crate::{Direction, LinkMut, PortMut, PortView};
+
+    type PortGraph = crate::PortGraph<u32, u32, u16>;
+    type MultiPortGraph = crate::MultiPortGraph<u32, u32, u16>;
 
     #[test]
     fn small_toposort() {

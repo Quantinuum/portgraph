@@ -1,5 +1,4 @@
 use criterion::{criterion_group, Criterion};
-use portgraph::{Hierarchy, NodeIndex, PortGraph};
 
 use crate::helpers::*;
 

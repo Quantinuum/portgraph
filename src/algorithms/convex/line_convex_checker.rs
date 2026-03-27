@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 
 use crate::algorithms::{toposort, TopoSort};
 use crate::boundary::Boundary;
-use crate::{Direction, LinkView, NodeIndex, PortIndex, SecondaryMap, UnmanagedDenseMap};
+use crate::{Direction, LinkView, NodeIndex, PortIndex, PortView, SecondaryMap, UnmanagedDenseMap};
 
 use super::{ConvexChecker, CreateConvexChecker};
 
@@ -34,16 +34,19 @@ const MAX_LINES_ON_NODE: usize = 4;
 /// Note that not every subgraph that can be expressed as line intervals is
 /// convex, so further checks are required once intervals are found.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LineConvexChecker<G> {
+pub struct LineConvexChecker<G>
+where
+    G: PortView,
+{
     graph: G,
     /// Map from nodes to the lines they belong to and their position on them.
-    node_to_pos: UnmanagedDenseMap<NodeIndex, LinePositions>,
+    node_to_pos: UnmanagedDenseMap<NodeIndex<G::NodeIndexBase>, LinePositions>,
     /// List of all lines, as sequence of the nodes on them.
     ///
     /// Note that the node positions on one line are not guaranteed to be
     /// contiguous, however they will always be strictly increasing according
     /// to the direction of the edges on the lines.
-    lines: Vec<Vec<NodeIndex>>,
+    lines: Vec<Vec<NodeIndex<G::NodeIndexBase>>>,
     /// Memory allocated once and reused in the `get_intervals` method.
     get_intervals_scratch_space: RefCell<SmallVec<[(LineIndex, LineIntervalWithCount); MAX_LINES]>>,
 }
@@ -194,7 +197,10 @@ impl<G: LinkView> LineConvexChecker<G> {
     /// of the line intervals of the subgraph. If none of these are on the same
     /// line as the inputs of the subgraph, the subgraph is convex.
     #[inline(always)]
-    pub fn is_node_convex(&self, nodes: impl IntoIterator<Item = NodeIndex>) -> bool {
+    pub fn is_node_convex(
+        &self,
+        nodes: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
+    ) -> bool {
         let Some(intervals) = self.get_intervals_from_nodes(nodes) else {
             return false;
         };
@@ -260,7 +266,11 @@ impl<G: LinkView> LineConvexChecker<G> {
     ///
     /// If `false` is returned, the `intervals` are left unchanged.
     #[must_use]
-    pub fn try_extend_intervals(&self, intervals: &mut LineIntervals, node: NodeIndex) -> bool {
+    pub fn try_extend_intervals(
+        &self,
+        intervals: &mut LineIntervals,
+        node: NodeIndex<G::NodeIndexBase>,
+    ) -> bool {
         // Backup the old intervals.
         let old_intervals = intervals.clone();
 
@@ -294,13 +304,13 @@ impl<G: LinkView> LineConvexChecker<G> {
 
     /// Get the lines a node belongs to.
     #[inline(always)]
-    pub fn get_lines(&self, node: NodeIndex) -> &[LineIndex] {
+    pub fn get_lines(&self, node: NodeIndex<G::NodeIndexBase>) -> &[LineIndex] {
         &self.node_to_pos.get(node).line_indices
     }
 
     /// Get the position of a node on its lines.
     #[inline(always)]
-    pub fn get_position(&self, node: NodeIndex) -> Position {
+    pub fn get_position(&self, node: NodeIndex<G::NodeIndexBase>) -> Position {
         self.node_to_pos.get(node).position
     }
 
@@ -313,7 +323,7 @@ impl<G: LinkView> LineConvexChecker<G> {
     /// Return `None` if the nodes do not form contiguous intervals on lines
     pub fn get_intervals_from_nodes(
         &self,
-        nodes: impl IntoIterator<Item = NodeIndex>,
+        nodes: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
     ) -> Option<LineIntervals> {
         let nodes = nodes.into_iter();
 
@@ -356,7 +366,7 @@ impl<G: LinkView> LineConvexChecker<G> {
     #[inline(always)]
     pub fn get_intervals_from_boundary_ports(
         &self,
-        ports: impl IntoIterator<Item = PortIndex>,
+        ports: impl IntoIterator<Item = PortIndex<G::PortIndexBase>>,
     ) -> Option<LineIntervals> {
         let boundary = Boundary::from_ports(&self.graph, ports);
         self.get_intervals_from_boundary(&boundary)
@@ -367,7 +377,10 @@ impl<G: LinkView> LineConvexChecker<G> {
     ///
     /// Return `None` if the nodes do not form contiguous intervals on lines
     #[inline(always)]
-    pub fn get_intervals_from_boundary(&self, boundary: &Boundary) -> Option<LineIntervals> {
+    pub fn get_intervals_from_boundary(
+        &self,
+        boundary: &Boundary<G::PortIndexBase>,
+    ) -> Option<LineIntervals> {
         let nodes = boundary.internal_nodes(&self.graph);
         self.get_intervals_from_nodes(nodes)
     }
@@ -376,7 +389,7 @@ impl<G: LinkView> LineConvexChecker<G> {
     pub fn nodes_in_intervals<'a>(
         &'a self,
         intervals: &'a LineIntervals,
-    ) -> impl Iterator<Item = NodeIndex> + 'a {
+    ) -> impl Iterator<Item = NodeIndex<G::NodeIndexBase>> + 'a {
         intervals
             .iter()
             .map(|(line, interval)| self.line_nodes_between(&interval, line))
@@ -393,7 +406,7 @@ impl<G: LinkView> LineConvexChecker<G> {
     }
 
     /// Get the lines passing through the given port.
-    pub fn lines_at_port(&self, port: PortIndex) -> &[LineIndex] {
+    pub fn lines_at_port(&self, port: PortIndex<G::PortIndexBase>) -> &[LineIndex] {
         let node = self.graph.port_node(port).expect("valid port");
         let dir = self.graph.port_direction(port).expect("valid port");
         let port_offset = self.graph.port_offset(port).expect("valid port").index();
@@ -418,7 +431,7 @@ impl<G: LinkView> LineConvexChecker<G> {
         &self,
         start_pos: Position,
         line_index: LineIndex,
-    ) -> impl Iterator<Item = NodeIndex> + '_ {
+    ) -> impl Iterator<Item = NodeIndex<G::NodeIndexBase>> + '_ {
         let start = self
             .find_index(line_index, start_pos)
             .expect("start not on line");
@@ -434,7 +447,7 @@ impl<G: LinkView> LineConvexChecker<G> {
         &self,
         &LineInterval { min, max }: &LineInterval,
         line_index: LineIndex,
-    ) -> impl Iterator<Item = NodeIndex> + '_ {
+    ) -> impl Iterator<Item = NodeIndex<G::NodeIndexBase>> + '_ {
         self.line_nodes_from(min, line_index)
             .take_while(move |&n| self.get_position(n) <= max)
     }
@@ -536,17 +549,19 @@ fn small_map_add(
 ///
 /// The closure must be called on the nodes of graph in topological order. This
 /// will extend the lines to the new node and create new lines as required.
-fn extend_line_ends_frontier<G>(graph: &G) -> impl FnMut(NodeIndex) -> LinePositions + '_
+fn extend_line_ends_frontier<G>(
+    graph: &G,
+) -> impl FnMut(NodeIndex<G::NodeIndexBase>) -> LinePositions + '_
 where
     G: LinkView,
 {
     // The current ends of all lines. The keys are always outgoing ports.
-    let mut frontier: BTreeMap<PortIndex, LinePositions> = BTreeMap::new();
+    let mut frontier: BTreeMap<PortIndex<G::PortIndexBase>, LinePositions> = BTreeMap::new();
 
     /// Get a line and position at the given port on the frontier.
-    fn pop_frontier(
-        frontier: &mut BTreeMap<PortIndex, LinePositions>,
-        port: PortIndex,
+    fn pop_frontier<P: crate::index::IndexBase>(
+        frontier: &mut BTreeMap<PortIndex<P>, LinePositions>,
+        port: PortIndex<P>,
     ) -> Option<(LineIndex, Position)> {
         let positions = frontier.get_mut(&port)?;
         let Some(line_index) = positions.line_indices.pop() else {
@@ -558,9 +573,9 @@ where
     }
 
     /// Add a line and position to the frontier for the given frontier port.
-    fn push_frontier(
-        frontier: &mut BTreeMap<PortIndex, LinePositions>,
-        port: PortIndex,
+    fn push_frontier<P: crate::index::IndexBase>(
+        frontier: &mut BTreeMap<PortIndex<P>, LinePositions>,
+        port: PortIndex<P>,
         line_index: LineIndex,
         position: Position,
     ) {
@@ -578,7 +593,7 @@ where
         new_line
     };
 
-    move |node: NodeIndex| {
+    move |node: NodeIndex<G::NodeIndexBase>| {
         // The outgoing ports linked to `node`; they are all in the frontier
         let prev_outgoing_ports = graph.inputs(node).flat_map(|ip| graph.port_links(ip));
 
@@ -628,11 +643,14 @@ where
 }
 
 impl<G: LinkView> ConvexChecker for LineConvexChecker<G> {
+    type NodeIndexBase = G::NodeIndexBase;
+    type PortIndexBase = G::PortIndexBase;
+
     fn is_convex(
         &self,
-        nodes: impl IntoIterator<Item = NodeIndex>,
-        inputs: impl IntoIterator<Item = PortIndex>,
-        outputs: impl IntoIterator<Item = PortIndex>,
+        nodes: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
+        inputs: impl IntoIterator<Item = PortIndex<G::PortIndexBase>>,
+        outputs: impl IntoIterator<Item = PortIndex<G::PortIndexBase>>,
     ) -> bool {
         let pre_outputs: BTreeSet<_> = outputs
             .into_iter()
@@ -657,11 +675,10 @@ impl<G: LinkView> CreateConvexChecker<G> for LineConvexChecker<G> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        boundary::HasBoundary, view::Subgraph, LinkMut, MultiPortGraph, PortMut, PortView,
-    };
-
     use super::*;
+    use crate::boundary::HasBoundary;
+    use crate::view::Subgraph;
+    use crate::{LinkMut, MultiPortGraph, NodeIndex, PortMut, PortView};
 
     use rstest::{fixture, rstest};
 

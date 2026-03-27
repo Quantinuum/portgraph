@@ -1,4 +1,5 @@
 use super::postorder_filtered;
+use crate::index::IndexBase;
 use crate::index::MaybeNodeIndex;
 use crate::unmanaged::UnmanagedDenseMap;
 use crate::{Direction, LinkView, NodeIndex, PortGraph, PortIndex, PortView, SecondaryMap};
@@ -20,6 +21,7 @@ use std::cmp::Ordering;
 /// ```
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
+/// # use ::portgraph::algorithms::DominatorTree;
 /// let mut graph = PortGraph::with_capacity(5, 10);
 /// let a = graph.add_node(0,2);
 /// let b = graph.add_node(1,1);
@@ -41,13 +43,13 @@ use std::cmp::Ordering;
 /// assert_eq!(tree.immediate_dominator(d), Some(a));
 /// assert_eq!(tree.immediate_dominator(e), Some(c));
 /// ```
-pub fn dominators<Map>(
-    graph: &PortGraph,
-    entry: NodeIndex,
+pub fn dominators<N: IndexBase, P: IndexBase, PO: IndexBase, Map>(
+    graph: &PortGraph<N, P, PO>,
+    entry: NodeIndex<N>,
     direction: Direction,
-) -> DominatorTree<Map>
+) -> DominatorTree<N, Map>
 where
-    Map: SecondaryMap<NodeIndex, MaybeNodeIndex<u32>>,
+    Map: SecondaryMap<NodeIndex<N>, MaybeNodeIndex<N>>,
 {
     DominatorTree::new(graph, entry, direction, |_| true, |_, _| true)
 }
@@ -71,6 +73,8 @@ where
 /// ```
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
+/// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
+/// # type DominatorTree = ::portgraph::algorithms::DominatorTree<u32>;
 /// let mut graph = PortGraph::with_capacity(5, 10);
 /// let a = graph.add_node(0,2);
 /// let b = graph.add_node(1,1);
@@ -102,15 +106,15 @@ where
 /// assert_eq!(tree.immediate_dominator(e), Some(c));
 /// assert_eq!(tree.immediate_dominator(f), None);
 /// ```
-pub fn dominators_filtered<Map>(
-    graph: &PortGraph,
-    entry: NodeIndex,
+pub fn dominators_filtered<N: IndexBase, P: IndexBase, PO: IndexBase, Map>(
+    graph: &PortGraph<N, P, PO>,
+    entry: NodeIndex<N>,
     direction: Direction,
-    node_filter: impl FnMut(NodeIndex) -> bool,
-    port_filter: impl FnMut(NodeIndex, PortIndex) -> bool,
-) -> DominatorTree<Map>
+    node_filter: impl FnMut(NodeIndex<N>) -> bool,
+    port_filter: impl FnMut(NodeIndex<N>, PortIndex<P>) -> bool,
+) -> DominatorTree<N, Map>
 where
-    Map: SecondaryMap<NodeIndex, MaybeNodeIndex<u32>>,
+    Map: SecondaryMap<NodeIndex<N>, MaybeNodeIndex<N>>,
 {
     DominatorTree::new(graph, entry, direction, node_filter, port_filter)
 }
@@ -118,26 +122,30 @@ where
 /// A dominator tree for a [`PortGraph`].
 ///
 /// See [`dominators`] for more information.
-pub struct DominatorTree<Map = UnmanagedDenseMap<NodeIndex, MaybeNodeIndex<u32>>> {
-    root: NodeIndex,
+pub struct DominatorTree<
+    N: IndexBase = u32,
+    Map = UnmanagedDenseMap<NodeIndex<N>, MaybeNodeIndex<N>>,
+> {
+    root: NodeIndex<N>,
     /// The immediate dominator of each node.
     idom: Map,
 }
 
-impl<Map> DominatorTree<Map>
+impl<N: IndexBase, Map> DominatorTree<N, Map>
 where
-    Map: SecondaryMap<NodeIndex, MaybeNodeIndex<u32>>,
+    Map: SecondaryMap<NodeIndex<N>, MaybeNodeIndex<N>>,
 {
-    fn new(
-        graph: &PortGraph,
-        entry: NodeIndex,
+    fn new<P: IndexBase, PO: IndexBase>(
+        graph: &PortGraph<N, P, PO>,
+        entry: NodeIndex<N>,
         direction: Direction,
-        mut node_filter: impl FnMut(NodeIndex) -> bool,
-        mut port_filter: impl FnMut(NodeIndex, PortIndex) -> bool,
+        mut node_filter: impl FnMut(NodeIndex<N>) -> bool,
+        mut port_filter: impl FnMut(NodeIndex<N>, PortIndex<P>) -> bool,
     ) -> Self {
         // We traverse the graph in post order starting at the `entry` node.
         // We associate each node that we encounter with its index within the traversal.
-        let mut node_to_index = UnmanagedDenseMap::with_capacity(graph.node_capacity());
+        let mut node_to_index: UnmanagedDenseMap<NodeIndex<N>, usize> =
+            UnmanagedDenseMap::with_capacity(graph.node_capacity());
         let mut index_to_node = Vec::with_capacity(graph.node_capacity());
 
         for (index, node) in postorder_filtered(
@@ -212,13 +220,13 @@ where
 
     #[inline]
     /// Returns the root of the dominator tree.
-    pub fn root(&self) -> NodeIndex {
+    pub fn root(&self) -> NodeIndex<N> {
         self.root
     }
 
     #[inline]
     /// Returns the immediate dominator of a node.
-    pub fn immediate_dominator(&self, node: NodeIndex) -> Option<NodeIndex> {
+    pub fn immediate_dominator(&self, node: NodeIndex<N>) -> Option<NodeIndex<N>> {
         self.idom.get(node).to_option()
     }
 }
@@ -236,16 +244,15 @@ fn intersect(dominators: &[usize], mut finger1: usize, mut finger2: usize) -> us
 
 #[cfg(test)]
 mod tests {
-    use crate::{LinkMut, PortMut};
-
     use super::*;
+    use crate::{LinkMut, PortGraph, PortMut};
 
     #[test]
     fn test_dominators_small() {
         //     ┏> b ┓
         //  a ─┫    ┣─> c ─> e
         //     ┗> d ┛
-        let mut graph = PortGraph::with_capacity(5, 10);
+        let mut graph: PortGraph = PortGraph::with_capacity(5, 10);
         let a = graph.add_node(0, 2);
         let b = graph.add_node(1, 1);
         let c = graph.add_node(2, 1);
@@ -282,7 +289,7 @@ mod tests {
         // a ─┬> b ┐
         //    │    ├─> c ─> e
         // f ─┴> d ┴────────^
-        let mut graph = PortGraph::with_capacity(5, 10);
+        let mut graph: PortGraph = PortGraph::with_capacity(5, 10);
         let a = graph.add_node(0, 2);
         let b = graph.add_node(1, 1);
         let c = graph.add_node(2, 1);
@@ -329,7 +336,7 @@ mod tests {
         // This graph is taken from the paper "A Simple, Fast Dominance Algorithm"
         // by Keith D. Cooper, Timothy J. Harvey, and Ken Kennedy.
         // Figure 4, page 8.
-        let mut graph = PortGraph::with_capacity(6, 18);
+        let mut graph: PortGraph = PortGraph::with_capacity(6, 18);
         let entry = graph.add_node(0, 2);
         let a = graph.add_node(1, 1);
         let b = graph.add_node(1, 2);

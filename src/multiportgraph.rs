@@ -5,7 +5,7 @@ mod iter;
 pub use self::iter::{
     Neighbours, NodeConnections, NodeLinks, NodeSubports, Nodes, PortLinks, Ports,
 };
-use crate::index::Unsigned;
+use crate::index::IndexBase;
 use crate::portgraph::PortOperation;
 use crate::view::{LinkMut, MultiMut, MultiView, PortMut};
 use crate::{
@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 /// The indices of unaffected nodes and ports remain stable.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-pub struct MultiPortGraph<N: Unsigned = u32, P: Unsigned = u32, PO: Unsigned = u16> {
+pub struct MultiPortGraph<N: IndexBase = u32, P: IndexBase = u32, PO: IndexBase = u16> {
     graph: PortGraph<N, P, PO>,
     /// Flags marking the internal ports of a multiport. That is, the ports connecting the main node and the copy nodes.
     multiport: BitVec,
@@ -44,7 +44,7 @@ pub struct MultiPortGraph<N: Unsigned = u32, P: Unsigned = u32, PO: Unsigned = u
 }
 
 // TODO: manual Debug impl for now, because the PortGraph debug impl is not generic
-impl<PO: Unsigned> std::fmt::Debug for MultiPortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for MultiPortGraph<N, P, PO> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MultiPortGraph")
             .field("graph", &self.graph)
@@ -63,12 +63,12 @@ impl<PO: Unsigned> std::fmt::Debug for MultiPortGraph<u32, u32, PO> {
 /// other links to the same port.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-pub struct SubportIndex {
-    port: PortIndex,
+pub struct SubportIndex<PO: IndexBase = u32> {
+    port: PortIndex<PO>,
     subport_offset: u16,
 }
 
-impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> MultiPortGraph<N, P, PO> {
     /// Create a new empty [`MultiPortGraph`].
     pub fn new() -> Self {
         Self {
@@ -94,7 +94,7 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     /// Returns a reference to the internal plain portgraph.
     ///
     /// This graph exposes the copy nodes as well as the main nodes.
-    pub fn as_portgraph(&self) -> &PortGraph<u32, u32, PO> {
+    pub fn as_portgraph(&self) -> &PortGraph<N, P, PO> {
         // Return the internal graph, exposing the copy nodes
         &self.graph
     }
@@ -102,8 +102,8 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     /// Given a node in the underlying flat portgraph, returns the main node for it.
     ///
     /// If the node is not a copy node, returns the node itself.
-    pub fn pg_main_node(&self, node: NodeIndex) -> NodeIndex {
-        if !self.copy_node.get(node) {
+    pub fn pg_main_node(&self, node: NodeIndex<N>) -> NodeIndex<N> {
+        if !self.copy_node.get(node.index()) {
             return node;
         }
         self.port_node(self.copy_node_main_port(node).unwrap())
@@ -111,19 +111,21 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     }
 }
 
-impl<PO: Unsigned> PortView for MultiPortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> PortView for MultiPortGraph<N, P, PO> {
+    type NodeIndexBase = N;
+    type PortIndexBase = P;
     type PortOffsetBase = PO;
 
     #[inline]
-    fn contains_node(&self, node: NodeIndex) -> bool {
-        self.graph.contains_node(node) && !self.copy_node.get(node)
+    fn contains_node(&self, node: NodeIndex<N>) -> bool {
+        self.graph.contains_node(node) && !self.copy_node.get(node.index())
     }
 
     #[inline]
-    fn contains_port(&self, port: PortIndex) -> bool {
+    fn contains_port(&self, port: PortIndex<P>) -> bool {
         self.graph
             .port_node(port)
-            .is_some_and(|node| !self.copy_node.get(node))
+            .is_some_and(|node| !self.copy_node.get(node.index()))
     }
 
     #[inline]
@@ -145,7 +147,7 @@ impl<PO: Unsigned> PortView for MultiPortGraph<u32, u32, PO> {
     }
 
     #[inline]
-    fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex<u32>> + Clone {
+    fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex<N>> + Clone {
         self::iter::Nodes {
             multigraph: self,
             iter: self.graph._nodes_iter(),
@@ -154,7 +156,7 @@ impl<PO: Unsigned> PortView for MultiPortGraph<u32, u32, PO> {
     }
 
     #[inline]
-    fn ports_iter(&self) -> impl Iterator<Item = PortIndex> + Clone {
+    fn ports_iter(&self) -> impl Iterator<Item = PortIndex<P>> + Clone {
         Ports::new(self, self.graph._ports_iter())
     }
 
@@ -171,30 +173,30 @@ impl<PO: Unsigned> PortView for MultiPortGraph<u32, u32, PO> {
 
     delegate! {
         to (self.graph) {
-            fn port_direction(&self, port: impl Into<PortIndex>) -> Option<Direction>;
-            fn port_node(&self, port: impl Into<PortIndex>) -> Option<NodeIndex>;
-            fn port_offset(&self, port: impl Into<PortIndex>) -> Option<PortOffset<PO>>;
-            fn port_index(&self, node: NodeIndex, offset: PortOffset<PO>) -> Option<PortIndex>;
-            fn ports(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortIndex> + Clone;
-            fn all_ports(&self, node: NodeIndex) -> impl Iterator<Item = PortIndex> + Clone;
-            fn input(&self, node: NodeIndex, offset: usize) -> Option<PortIndex>;
-            fn output(&self, node: NodeIndex, offset: usize) -> Option<PortIndex>;
-            fn num_ports(&self, node: NodeIndex, direction: Direction) -> usize;
-            fn port_offsets(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortOffset<PO>> + Clone;
-            fn all_port_offsets(&self, node: NodeIndex) -> impl Iterator<Item = PortOffset<PO>> + Clone;
-            fn node_port_capacity(&self, node: NodeIndex) -> usize;
+            fn port_direction(&self, port: impl Into<PortIndex<P>>) -> Option<Direction>;
+            fn port_node(&self, port: impl Into<PortIndex<P>>) -> Option<NodeIndex<N>>;
+            fn port_offset(&self, port: impl Into<PortIndex<P>>) -> Option<PortOffset<PO>>;
+            fn port_index(&self, node: NodeIndex<N>, offset: PortOffset<PO>) -> Option<PortIndex<P>>;
+            fn ports(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = PortIndex<P>> + Clone;
+            fn all_ports(&self, node: NodeIndex<N>) -> impl Iterator<Item = PortIndex<P>> + Clone;
+            fn input(&self, node: NodeIndex<N>, offset: usize) -> Option<PortIndex<P>>;
+            fn output(&self, node: NodeIndex<N>, offset: usize) -> Option<PortIndex<P>>;
+            fn num_ports(&self, node: NodeIndex<N>, direction: Direction) -> usize;
+            fn port_offsets(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = PortOffset<PO>> + Clone;
+            fn all_port_offsets(&self, node: NodeIndex<N>) -> impl Iterator<Item = PortOffset<PO>> + Clone;
+            fn node_port_capacity(&self, node: NodeIndex<N>) -> usize;
         }
     }
 }
 
-impl<PO: Unsigned> PortMut for MultiPortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> PortMut for MultiPortGraph<N, P, PO> {
     #[inline]
-    fn add_node(&mut self, incoming: usize, outgoing: usize) -> NodeIndex {
+    fn add_node(&mut self, incoming: usize, outgoing: usize) -> NodeIndex<N> {
         self.graph.add_node(incoming, outgoing)
     }
 
-    fn remove_node(&mut self, node: NodeIndex) {
-        debug_assert!(!self.copy_node.get(node));
+    fn remove_node(&mut self, node: NodeIndex<N>) {
+        debug_assert!(!self.copy_node.get(node.index()));
         for port in self.graph._all_ports(node) {
             if *self.multiport.get(port) {
                 self.unlink_port(port);
@@ -218,19 +220,26 @@ impl<PO: Unsigned> PortMut for MultiPortGraph<u32, u32, PO> {
         self.copy_node.reserve(nodes);
     }
 
-    fn set_num_ports<F>(&mut self, node: NodeIndex, incoming: usize, outgoing: usize, mut rekey: F)
-    where
-        F: FnMut(PortIndex, PortOperation),
+    fn set_num_ports<F>(
+        &mut self,
+        node: NodeIndex<N>,
+        incoming: usize,
+        outgoing: usize,
+        mut rekey: F,
+    ) where
+        F: FnMut(PortIndex<P>, PortOperation<P>),
     {
         let mut dropped_ports = Vec::new();
-        let rekey_wrapper = |port, op| {
+        let rekey_wrapper = |port: PortIndex<P>, op: PortOperation<P>| {
             match op {
                 PortOperation::Removed { old_link } => {
-                    if *self.multiport.get(port) {
+                    if *self.multiport.get(port.index()) {
                         dropped_ports.push((port, old_link.expect("Multiport node has no link")));
                     }
                 }
-                PortOperation::Moved { new_index } => self.multiport.swap(port, new_index),
+                PortOperation::Moved { new_index } => {
+                    self.multiport.swap(port.index(), new_index.index())
+                }
             }
             rekey(port, op);
         };
@@ -243,25 +252,25 @@ impl<PO: Unsigned> PortMut for MultiPortGraph<u32, u32, PO> {
 
     fn compact_nodes<F>(&mut self, mut rekey: F)
     where
-        F: FnMut(NodeIndex, NodeIndex),
+        F: FnMut(NodeIndex<N>, NodeIndex<N>),
     {
         self.graph.compact_nodes(|node, new_node| {
-            self.copy_node.swap(node, new_node);
+            self.copy_node.swap(node.index(), new_node.index());
             rekey(node, new_node);
         });
     }
 
-    fn swap_nodes(&mut self, a: NodeIndex, b: NodeIndex) {
+    fn swap_nodes(&mut self, a: NodeIndex<N>, b: NodeIndex<N>) {
         self.graph.swap_nodes(a, b);
-        self.copy_node.swap(a, b);
+        self.copy_node.swap(a.index(), b.index());
     }
 
     fn compact_ports<F>(&mut self, mut rekey: F)
     where
-        F: FnMut(PortIndex, PortIndex),
+        F: FnMut(PortIndex<P>, PortIndex<P>),
     {
         self.graph.compact_ports(|port, new_port| {
-            self.multiport.swap(port, new_port);
+            self.multiport.swap(port.index(), new_port.index());
             rekey(port, new_port);
         });
     }
@@ -273,8 +282,8 @@ impl<PO: Unsigned> PortMut for MultiPortGraph<u32, u32, PO> {
     }
 }
 
-impl<PO: Unsigned> LinkView for MultiPortGraph<u32, u32, PO> {
-    type LinkEndpoint = SubportIndex;
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> LinkView for MultiPortGraph<N, P, PO> {
+    type LinkEndpoint = SubportIndex<P>;
 
     #[inline]
     fn link_count(&self) -> usize {
@@ -285,34 +294,34 @@ impl<PO: Unsigned> LinkView for MultiPortGraph<u32, u32, PO> {
     delegate! {
         to self {
             #[call(_get_connections)]
-            fn get_connections(&self, from: NodeIndex, to: NodeIndex) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn get_connections(&self, from: NodeIndex<N>, to: NodeIndex<N>) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
             #[call(_port_links)]
-            fn port_links(&self, port: PortIndex) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn port_links(&self, port: PortIndex<P>) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
             #[call(_links)]
-            fn links(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn links(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
             #[call(_all_links)]
-            fn all_links(&self, node: NodeIndex) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn all_links(&self, node: NodeIndex<N>) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
             #[call(_neighbours)]
-            fn neighbours(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = NodeIndex> + Clone;
+            fn neighbours(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = NodeIndex<N>> + Clone;
             #[call(_all_neighbours)]
-            fn all_neighbours(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + Clone;
+            fn all_neighbours(&self, node: NodeIndex<N>) -> impl Iterator<Item = NodeIndex<N>> + Clone;
         }
     }
 }
 
-impl<PO: Unsigned> LinkMut for MultiPortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> LinkMut for MultiPortGraph<N, P, PO> {
     fn link_ports(
         &mut self,
-        port_a: PortIndex,
-        port_b: PortIndex,
-    ) -> Result<(SubportIndex, SubportIndex), LinkError<PO>> {
+        port_a: PortIndex<P>,
+        port_b: PortIndex<P>,
+    ) -> Result<(SubportIndex<P>, SubportIndex<P>), LinkError<N, P, PO>> {
         let (multiport_a, index_a) = self.get_free_multiport(port_a)?;
         let (multiport_b, index_b) = self.get_free_multiport(port_b)?;
         self.graph.link_ports(index_a, index_b)?;
         Ok((multiport_a, multiport_b))
     }
 
-    fn unlink_port(&mut self, port: PortIndex) -> Option<SubportIndex> {
+    fn unlink_port(&mut self, port: PortIndex<P>) -> Option<SubportIndex<P>> {
         if self.is_multiport(port) {
             let link = self
                 .graph
@@ -325,8 +334,8 @@ impl<PO: Unsigned> LinkMut for MultiPortGraph<u32, u32, PO> {
     }
 }
 
-impl<PO: Unsigned> MultiView for MultiPortGraph<u32, u32, PO> {
-    fn subport_link(&self, subport: SubportIndex) -> Option<SubportIndex> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> MultiView for MultiPortGraph<N, P, PO> {
+    fn subport_link(&self, subport: SubportIndex<P>) -> Option<SubportIndex<P>> {
         let subport_index = self.get_subport_index(subport)?;
         let link = self.graph.port_link(subport_index)?;
         self.get_subport_from_index(link)
@@ -335,19 +344,19 @@ impl<PO: Unsigned> MultiView for MultiPortGraph<u32, u32, PO> {
     delegate! {
         to self {
             #[call(_subports)]
-            fn subports(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = SubportIndex> + Clone;
+            fn subports(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = SubportIndex<P>> + Clone;
             #[call(_all_subports)]
-            fn all_subports(&self, node: NodeIndex) -> impl Iterator<Item = SubportIndex> + Clone;
+            fn all_subports(&self, node: NodeIndex<N>) -> impl Iterator<Item = SubportIndex<P>> + Clone;
         }
     }
 }
 
-impl<PO: Unsigned> MultiMut for MultiPortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> MultiMut for MultiPortGraph<N, P, PO> {
     fn link_subports(
         &mut self,
-        subport_from: SubportIndex,
-        subport_to: SubportIndex,
-    ) -> Result<(), LinkError<PO>> {
+        subport_from: SubportIndex<P>,
+        subport_to: SubportIndex<P>,
+    ) -> Result<(), LinkError<N, P, PO>> {
         // TODO: Custom errors
         let from_index = self
             .get_subport_index(subport_from)
@@ -359,7 +368,7 @@ impl<PO: Unsigned> MultiMut for MultiPortGraph<u32, u32, PO> {
         Ok(())
     }
 
-    fn unlink_subport(&mut self, subport: SubportIndex) -> Option<SubportIndex> {
+    fn unlink_subport(&mut self, subport: SubportIndex<P>) -> Option<SubportIndex<P>> {
         // TODO: Remove copy nodes when they are no longer needed?
         let subport_index = self.get_subport_index(subport)?;
         let link = self.graph.unlink_port(subport_index)?;
@@ -368,15 +377,15 @@ impl<PO: Unsigned> MultiMut for MultiPortGraph<u32, u32, PO> {
 }
 
 /// Internal helper methods
-impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> MultiPortGraph<N, P, PO> {
     /// Remove an internal copy node.
     ///
     /// Returns one of the links, if the node was connected
     fn remove_copy_node(
         &mut self,
-        main_node_port: PortIndex,
-        copy_port: PortIndex,
-    ) -> Option<SubportIndex> {
+        main_node_port: PortIndex<P>,
+        copy_port: PortIndex<P>,
+    ) -> Option<SubportIndex<P>> {
         let copy_node = self.graph.port_node(copy_port).unwrap();
         let dir = self.port_direction(copy_port).unwrap();
         debug_assert!(self.copy_node.get(copy_node));
@@ -385,9 +394,9 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
         let link = link.map(|(_, tgt)| self.get_subport_from_index(tgt).unwrap());
 
         let mut subports = self.graph._ports(copy_node, dir.reverse());
-        self.multiport.set(copy_port, false);
-        self.multiport.set(main_node_port, false);
-        self.copy_node.set(copy_node, false);
+        self.multiport.set(copy_port.index(), false);
+        self.multiport.set(main_node_port.index(), false);
+        self.copy_node.set(copy_node.index(), false);
         self.graph.remove_node(copy_node);
         self.copy_node_count -= 1;
         self.subport_count -= subports.len();
@@ -399,10 +408,11 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     /// Returns a free multiport for the given port, along with its
     /// portgraph-level port index. Allocates a new copy node if needed, and
     /// grows the number of copy ports as needed.
+    #[allow(clippy::type_complexity)]
     fn get_free_multiport(
         &mut self,
-        port: PortIndex,
-    ) -> Result<(SubportIndex, PortIndex), LinkError<PO>> {
+        port: PortIndex<P>,
+    ) -> Result<(SubportIndex<P>, PortIndex<P>), LinkError<N, P, PO>> {
         let Some(dir) = self.graph.port_direction(port) else {
             return Err(LinkError::UnknownPort { port });
         };
@@ -420,7 +430,7 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
                     Direction::Outgoing => (1, 2),
                 };
                 let copy_node = self.graph.add_node(in_out_count.0, in_out_count.1);
-                self.copy_node.set(copy_node, true);
+                self.copy_node.set(copy_node.index(), true);
                 self.copy_node_count += 1;
                 self.subport_count += 2;
 
@@ -469,7 +479,7 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
 
     /// Adds an extra port to a node, in the specified direction.
     #[inline]
-    fn add_port(&mut self, node: NodeIndex, direction: Direction) -> PortIndex {
+    fn add_port(&mut self, node: NodeIndex<N>, direction: Direction) -> PortIndex<P> {
         let mut incoming = self.graph.num_inputs(node);
         let mut outgoing = self.graph.num_outputs(node);
         let new_offset = match direction {
@@ -494,10 +504,10 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     #[inline]
     fn link_ports_directed(
         &mut self,
-        port1: PortIndex,
-        port2: PortIndex,
+        port1: PortIndex<P>,
+        port2: PortIndex<P>,
         dir: Direction,
-    ) -> Result<(), LinkError<PO>> {
+    ) -> Result<(), LinkError<N, P, PO>> {
         match dir {
             Direction::Incoming => self.graph.link_ports(port2, port1)?,
             Direction::Outgoing => self.graph.link_ports(port1, port2)?,
@@ -506,7 +516,7 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     }
 
     /// Returns the PortIndex from the main node that connects to this copy node.
-    fn copy_node_main_port(&self, copy_node: NodeIndex) -> Option<PortIndex> {
+    fn copy_node_main_port(&self, copy_node: NodeIndex<N>) -> Option<PortIndex<P>> {
         debug_assert!(self.copy_node.get(copy_node));
         let mut incoming = self.graph._inputs(copy_node);
         let mut outgoing = self.graph._outputs(copy_node);
@@ -518,7 +528,7 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
                 // node.
                 let in_port = incoming.next().unwrap();
                 let out_port = outgoing.next().unwrap();
-                match self.multiport.get(in_port) {
+                match self.multiport.get(in_port.index()) {
                     true => in_port,
                     false => out_port,
                 }
@@ -546,19 +556,19 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     ///
     /// That is, this port is part of the connection between a main port and a copy node.
     #[inline]
-    fn is_multiport(&self, port: PortIndex) -> bool {
-        *self.multiport.get(port)
+    fn is_multiport(&self, port: PortIndex<P>) -> bool {
+        *self.multiport.get(port.index())
     }
 
     /// Returns whether the node is a copy node.
     #[inline]
-    fn is_copy_node(&self, node: NodeIndex) -> bool {
-        *self.copy_node.get(node)
+    fn is_copy_node(&self, node: NodeIndex<N>) -> bool {
+        *self.copy_node.get(node.index())
     }
 
     /// Get the copy node for a multiport PortIndex, if it exists.
     #[inline]
-    fn get_copy_node(&self, port_index: PortIndex) -> Option<NodeIndex> {
+    fn get_copy_node(&self, port_index: PortIndex<P>) -> Option<NodeIndex<N>> {
         let link = self.graph.port_link(port_index)?;
         self.graph.port_node(link)
     }
@@ -566,7 +576,7 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     /// Get the `PortIndex` in the copy node for a SubportIndex.
     ///
     /// If the port is not a multiport, returns the port index in the operation node.
-    fn get_subport_index(&self, subport: SubportIndex) -> Option<PortIndex> {
+    fn get_subport_index(&self, subport: SubportIndex<P>) -> Option<PortIndex<P>> {
         let port_index = subport.port();
         if self.is_multiport(port_index) {
             let copy_node = self.get_copy_node(port_index)?;
@@ -580,7 +590,7 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
 
     /// Checks if the given `PortIndex` corresponds to a subport, and computes the correct `SubportIndex`.
     /// This should be the inverse of `get_subport_index`.
-    fn get_subport_from_index(&self, index: PortIndex) -> Option<SubportIndex> {
+    fn get_subport_from_index(&self, index: PortIndex<P>) -> Option<SubportIndex<P>> {
         let linked_node = self.graph.port_node(index).unwrap();
         if self.is_copy_node(linked_node) {
             let port = self.copy_node_main_port(linked_node)?;
@@ -592,8 +602,10 @@ impl<PO: Unsigned> MultiPortGraph<u32, u32, PO> {
     }
 }
 
-impl From<PortGraph> for MultiPortGraph {
-    fn from(graph: PortGraph) -> Self {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> From<PortGraph<N, P, PO>>
+    for MultiPortGraph<N, P, PO>
+{
+    fn from(graph: PortGraph<N, P, PO>) -> Self {
         let node_count = graph.node_count();
         let port_count = graph.port_count();
         Self {
@@ -606,17 +618,19 @@ impl From<PortGraph> for MultiPortGraph {
     }
 }
 
-impl From<MultiPortGraph> for PortGraph {
-    fn from(multi: MultiPortGraph) -> Self {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> From<MultiPortGraph<N, P, PO>>
+    for PortGraph<N, P, PO>
+{
+    fn from(multi: MultiPortGraph<N, P, PO>) -> Self {
         // Return the internal graph, exposing the copy nodes
         multi.graph
     }
 }
 
-impl SubportIndex {
+impl<P: IndexBase> SubportIndex<P> {
     /// Creates a new multiport index for a port without a copy node.
     #[inline]
-    pub fn new_unique(port: PortIndex) -> Self {
+    pub fn new_unique(port: PortIndex<P>) -> Self {
         Self {
             port,
             subport_offset: 0,
@@ -629,7 +643,7 @@ impl SubportIndex {
     ///
     /// If the subport index is more than 2^16.
     #[inline]
-    pub fn new_multi(port: PortIndex, subport_offset: usize) -> Self {
+    pub fn new_multi(port: PortIndex<P>, subport_offset: usize) -> Self {
         assert!(
             subport_offset < u16::MAX as usize,
             "Subport index too large"
@@ -642,7 +656,7 @@ impl SubportIndex {
 
     /// Returns the port index.
     #[inline]
-    pub fn port(self) -> PortIndex {
+    pub fn port(self) -> PortIndex<P> {
         self.port
     }
 
@@ -655,13 +669,13 @@ impl SubportIndex {
     }
 }
 
-impl From<SubportIndex> for PortIndex {
-    fn from(index: SubportIndex) -> Self {
+impl<P: IndexBase> From<SubportIndex<P>> for PortIndex<P> {
+    fn from(index: SubportIndex<P>) -> Self {
         PortIndex::new(index.port.index())
     }
 }
 
-impl std::fmt::Debug for SubportIndex {
+impl<P: IndexBase> std::fmt::Debug for SubportIndex<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "SubportIndex({}:{})", self.port.index(), self.offset())
     }
@@ -670,6 +684,7 @@ impl std::fmt::Debug for SubportIndex {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
+    use crate::PortGraph;
     use itertools::Itertools;
 
     #[test]

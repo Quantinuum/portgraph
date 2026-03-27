@@ -1,7 +1,7 @@
 use crate::helpers::*;
 
 use criterion::{criterion_group, Criterion};
-use portgraph::{PortGraph, PortMut, PortView};
+use portgraph::{PortMut, PortView};
 
 // -----------------------------------------------------------------------------
 // Benchmark functions

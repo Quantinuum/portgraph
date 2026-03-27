@@ -12,6 +12,8 @@
 //!
 //! ```
 //! # use ::portgraph::*;
+//! # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
+//! # type Weights<N, P> = ::portgraph::Weights<N, P, u32, u32>;
 //! let mut graph: PortGraph = PortGraph::new();
 //! let mut weights = Weights::<usize, isize>::new();
 //!
@@ -44,20 +46,21 @@ use std::ops::{Index, IndexMut};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::index::IndexBase;
 use crate::{NodeIndex, PortIndex, UnmanagedDenseMap};
 
 /// Graph component that encodes node and port weights.
 /// Based on two [`UnmanagedDenseMap`] containers.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-pub struct Weights<N, P> {
+pub struct Weights<N, P, NI: IndexBase = u32, PI: IndexBase = u32> {
     /// Node weights.
-    pub nodes: UnmanagedDenseMap<NodeIndex, N>,
+    pub nodes: UnmanagedDenseMap<NodeIndex<NI>, N>,
     /// Port weights.
-    pub ports: UnmanagedDenseMap<PortIndex, P>,
+    pub ports: UnmanagedDenseMap<PortIndex<PI>, P>,
 }
 
-impl<N, P> Weights<N, P>
+impl<N, P, NI: IndexBase, PI: IndexBase> Weights<N, P, NI, PI>
 where
     N: Clone + Default,
     P: Clone + Default,
@@ -83,7 +86,7 @@ where
     }
 }
 
-impl<N, P> Default for Weights<N, P>
+impl<N, P, NI: IndexBase, PI: IndexBase> Default for Weights<N, P, NI, PI>
 where
     N: Clone + Default,
     P: Clone + Default,
@@ -97,46 +100,46 @@ where
     }
 }
 
-impl<N, P> Index<NodeIndex> for Weights<N, P>
+impl<N, P, NI: IndexBase, PI: IndexBase> Index<NodeIndex<NI>> for Weights<N, P, NI, PI>
 where
     N: Clone,
     P: Clone,
 {
     type Output = N;
 
-    fn index(&self, key: NodeIndex) -> &Self::Output {
+    fn index(&self, key: NodeIndex<NI>) -> &Self::Output {
         &self.nodes[key]
     }
 }
 
-impl<N, P> IndexMut<NodeIndex> for Weights<N, P>
+impl<N, P, NI: IndexBase, PI: IndexBase> IndexMut<NodeIndex<NI>> for Weights<N, P, NI, PI>
 where
     N: Clone,
     P: Clone,
 {
-    fn index_mut(&mut self, key: NodeIndex) -> &mut Self::Output {
+    fn index_mut(&mut self, key: NodeIndex<NI>) -> &mut Self::Output {
         &mut self.nodes[key]
     }
 }
 
-impl<N, P> Index<PortIndex> for Weights<N, P>
+impl<N, P, NI: IndexBase, PI: IndexBase> Index<PortIndex<PI>> for Weights<N, P, NI, PI>
 where
     N: Clone,
     P: Clone,
 {
     type Output = P;
 
-    fn index(&self, key: PortIndex) -> &Self::Output {
+    fn index(&self, key: PortIndex<PI>) -> &Self::Output {
         &self.ports[key]
     }
 }
 
-impl<N, P> IndexMut<PortIndex> for Weights<N, P>
+impl<N, P, NI: IndexBase, PI: IndexBase> IndexMut<PortIndex<PI>> for Weights<N, P, NI, PI>
 where
     N: Clone,
     P: Clone,
 {
-    fn index_mut(&mut self, key: PortIndex) -> &mut Self::Output {
+    fn index_mut(&mut self, key: PortIndex<PI>) -> &mut Self::Output {
         &mut self.ports[key]
     }
 }
@@ -147,9 +150,9 @@ mod test {
 
     #[test]
     fn test_weights() {
-        let mut weights = Weights::<usize, isize>::new();
-        let node = NodeIndex::new(0);
-        let port = PortIndex::new(0);
+        let mut weights = Weights::<usize, isize, u32, u32>::new();
+        let node = NodeIndex::<u32>::new(0);
+        let port = PortIndex::<u32>::new(0);
 
         assert_eq!(weights[node], 0);
         assert_eq!(weights[port], 0);

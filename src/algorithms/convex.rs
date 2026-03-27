@@ -26,10 +26,16 @@ pub use line_convex_checker::{
     LineConvexChecker, LineIndex, LineInterval, LineIntervals, Position,
 };
 
+use crate::index::IndexBase;
 use crate::{NodeIndex, PortIndex};
 
 /// Pre-computed data for fast subgraph convexity checking on a given graph.
 pub trait ConvexChecker {
+    /// The base unsigned integer type for node indices.
+    type NodeIndexBase: IndexBase;
+    /// The base unsigned integer type for port indices.
+    type PortIndexBase: IndexBase;
+
     /// Returns `true` if the subgraph is convex.
     ///
     /// A subgraph is convex if there is no path between two nodes of the
@@ -52,9 +58,9 @@ pub trait ConvexChecker {
     /// input or output port is considered within the subgraph.
     fn is_convex(
         &self,
-        nodes: impl IntoIterator<Item = NodeIndex>,
-        inputs: impl IntoIterator<Item = PortIndex>,
-        outputs: impl IntoIterator<Item = PortIndex>,
+        nodes: impl IntoIterator<Item = NodeIndex<Self::NodeIndexBase>>,
+        inputs: impl IntoIterator<Item = PortIndex<Self::PortIndexBase>>,
+        outputs: impl IntoIterator<Item = PortIndex<Self::PortIndexBase>>,
     ) -> bool;
 }
 
@@ -69,18 +75,21 @@ pub trait CreateConvexChecker<G>: ConvexChecker {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        algorithms::convex::ConvexChecker, LinkMut, LinkView, NodeIndex, PortGraph, PortIndex,
-        PortMut, PortView,
-    };
+    use crate::{algorithms::convex::ConvexChecker, LinkMut, LinkView, PortMut, PortView};
 
     use super::{LineConvexChecker, TopoConvexChecker};
 
     use rstest::rstest;
 
+    type PortGraph = crate::PortGraph<u32, u32, u16>;
+    type NodeIndex = crate::NodeIndex<u32>;
+
     /// A useful enum to abstract over the different convex checkers to test.
     #[allow(clippy::large_enum_variant)]
-    enum ConvexCheckerVariants<G> {
+    enum ConvexCheckerVariants<G>
+    where
+        G: PortView,
+    {
         Topo(Option<TopoConvexChecker<G>>),
         Line(Option<LineConvexChecker<G>>),
     }
@@ -104,7 +113,10 @@ mod tests {
             }
         }
 
-        fn is_node_convex(&self, nodes: impl IntoIterator<Item = NodeIndex>) -> bool {
+        fn is_node_convex(
+            &self,
+            nodes: impl IntoIterator<Item = crate::NodeIndex<G::NodeIndexBase>>,
+        ) -> bool {
             match self {
                 Self::Topo(checker) => checker.as_ref().expect("init first").is_node_convex(nodes),
                 Self::Line(checker) => checker.as_ref().expect("init first").is_node_convex(nodes),
@@ -116,11 +128,14 @@ mod tests {
     where
         G: LinkView + Clone,
     {
+        type NodeIndexBase = G::NodeIndexBase;
+        type PortIndexBase = G::PortIndexBase;
+
         fn is_convex(
             &self,
-            nodes: impl IntoIterator<Item = NodeIndex>,
-            inputs: impl IntoIterator<Item = PortIndex>,
-            outputs: impl IntoIterator<Item = PortIndex>,
+            nodes: impl IntoIterator<Item = crate::NodeIndex<G::NodeIndexBase>>,
+            inputs: impl IntoIterator<Item = crate::PortIndex<G::PortIndexBase>>,
+            outputs: impl IntoIterator<Item = crate::PortIndex<G::PortIndexBase>>,
         ) -> bool {
             match self {
                 ConvexCheckerVariants::Topo(checker) => checker
