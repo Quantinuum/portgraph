@@ -139,8 +139,9 @@ jobs:
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-minimal-versions
         run: |
-          cargo binstall cargo-hack --force
-          cargo binstall cargo-minimal-versions --force
+          # Install older versions that still support rust 1.75
+          cargo binstall cargo-hack@0.6.38 --force
+          cargo binstall cargo-minimal-versions@0.1.32 --force
       - name: Pin transitive dependencies not compatible with our MSRV
         # Add new dependencies as needed if the check fails due incorrectly set minimum versions in transitive dependencies,
         # you will see a message like:
