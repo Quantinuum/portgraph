@@ -2,7 +2,6 @@
 
 use criterion::{criterion_group, Criterion};
 use portgraph::render::{DotFormat, MermaidFormat};
-use portgraph::{Hierarchy, PortGraph, Weights};
 
 use crate::helpers::*;
 
@@ -13,7 +12,7 @@ use crate::helpers::*;
 struct RenderMermaid {
     graph: PortGraph,
     hierarchy: Hierarchy,
-    weights: Weights<usize, isize>,
+    weights: Weights,
 }
 impl SizedBenchmark for RenderMermaid {
     fn name() -> &'static str {
@@ -43,7 +42,7 @@ impl SizedBenchmark for RenderMermaid {
 struct RenderDot {
     graph: PortGraph,
     hierarchy: Hierarchy,
-    weights: Weights<usize, isize>,
+    weights: Weights,
 }
 impl SizedBenchmark for RenderDot {
     fn name() -> &'static str {

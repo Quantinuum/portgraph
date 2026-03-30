@@ -6,17 +6,18 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use itertools::Itertools;
 
 use crate::algorithms::TopoSort;
+use crate::index::IndexBase;
 use crate::{Direction, LinkView, NodeIndex, PortIndex, PortView};
 
 /// A port boundary in a graph.
 ///
 /// Defined from a set of incoming and outgoing ports.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Boundary {
+pub struct Boundary<P: IndexBase = u32> {
     /// The ordered list of incoming ports in the boundary.
-    inputs: Vec<PortIndex>,
+    inputs: Vec<PortIndex<P>>,
     /// The ordered list of outgoing ports in the boundary.
-    outputs: Vec<PortIndex>,
+    outputs: Vec<PortIndex<P>>,
 }
 
 /// Boundary port ID.
@@ -34,17 +35,20 @@ pub struct BoundaryPort {
 }
 
 /// Trait for graph structures that define a boundary of input and output ports.
-pub trait HasBoundary {
+pub trait HasBoundary<P: IndexBase = u32> {
     /// Returns the boundary of the node.
-    fn port_boundary(&self) -> Cow<'_, Boundary>;
+    fn port_boundary(&self) -> Cow<'_, Boundary<P>>;
 }
 
-impl Boundary {
+impl<P: IndexBase> Boundary<P> {
     /// Creates a new boundary from the given input and output ports.
     ///
     /// Queries the direction of each port to split them into inputs and outputs.
     /// For a version that doesn't borrow the graph, use [`Boundary::new`].
-    pub fn from_ports(graph: &impl PortView, ports: impl IntoIterator<Item = PortIndex>) -> Self {
+    pub fn from_ports(
+        graph: &impl PortView<PortIndexBase = P>,
+        ports: impl IntoIterator<Item = PortIndex<P>>,
+    ) -> Self {
         let (inputs, outputs): (Vec<_>, Vec<_>) = ports.into_iter().partition_map(|p| match graph
             .port_direction(p)
             .unwrap()
@@ -65,8 +69,8 @@ impl Boundary {
     ///
     /// For a safe version, use [`Boundary::from_ports`].
     pub fn new(
-        inputs: impl IntoIterator<Item = PortIndex>,
-        outputs: impl IntoIterator<Item = PortIndex>,
+        inputs: impl IntoIterator<Item = PortIndex<P>>,
+        outputs: impl IntoIterator<Item = PortIndex<P>>,
     ) -> Self {
         let inputs = inputs.into_iter().collect();
         let outputs = outputs.into_iter().collect();
@@ -79,7 +83,7 @@ impl Boundary {
     }
 
     /// Returns the [`BoundaryPort`] corresponding to a port index.
-    pub fn find_port(&self, port: PortIndex, direction: Direction) -> BoundaryPort {
+    pub fn find_port(&self, port: PortIndex<P>, direction: Direction) -> BoundaryPort {
         let ports = match direction {
             Direction::Incoming => &self.inputs,
             Direction::Outgoing => &self.outputs,
@@ -116,7 +120,7 @@ impl Boundary {
     }
 
     /// Returns the [`PortIndex`] corresponding to a [`BoundaryPort`] in this boundary.
-    pub fn port_index(&self, port: &BoundaryPort) -> PortIndex {
+    pub fn port_index(&self, port: &BoundaryPort) -> PortIndex<P> {
         match port.direction {
             Direction::Incoming => self.inputs[port.index],
             Direction::Outgoing => self.outputs[port.index],
@@ -128,7 +132,7 @@ impl Boundary {
     ///
     /// When two boundaries are compatible, [`BoundaryPort`]s that are valid in
     /// one boundary are also valid in the other boundary.
-    pub fn is_compatible(&self, other: &Boundary) -> bool {
+    pub fn is_compatible(&self, other: &Boundary<P>) -> bool {
         self.inputs.len() == other.inputs.len() && self.outputs.len() == other.outputs.len()
     }
 
@@ -146,13 +150,13 @@ impl Boundary {
     /// In the worse case, the complexity of this operation is `O(e log(n) +
     /// k*n)`, where `e` is the number of links in the `graph`, `n` is the
     /// number of nodes, and `k` is the number of ports in the boundary.
-    pub fn port_ordering(&self, graph: &impl LinkView) -> PortOrdering {
-        let boundary_ports: HashSet<PortIndex> =
+    pub fn port_ordering(&self, graph: &impl LinkView<PortIndexBase = P>) -> PortOrdering {
+        let boundary_ports: HashSet<PortIndex<P>> =
             self.inputs.iter().chain(&self.outputs).copied().collect();
 
         // Maps between the input/output ports in the boundary and the nodes they belong to.
-        let mut input_nodes: BTreeMap<NodeIndex, Vec<PortIndex>> = BTreeMap::new();
-        let mut output_nodes: BTreeMap<NodeIndex, Vec<PortIndex>> = BTreeMap::new();
+        let mut input_nodes: BTreeMap<NodeIndex<_>, Vec<PortIndex<P>>> = BTreeMap::new();
+        let mut output_nodes: BTreeMap<NodeIndex<_>, Vec<PortIndex<P>>> = BTreeMap::new();
         for &port in self.inputs.iter() {
             let node = graph.port_node(port).unwrap();
             input_nodes.entry(node).or_default().push(port);
@@ -175,8 +179,8 @@ impl Boundary {
                 .all(|p| boundary_ports.contains(&p) || graph.port_links(p).count() == 0)
         });
 
-        let mut reaching: BTreeMap<NodeIndex, (usize, HashSet<PortIndex>)> = BTreeMap::new();
-        let mut topo = TopoSort::<_, HashSet<PortIndex>>::new(
+        let mut reaching: BTreeMap<NodeIndex<_>, (usize, HashSet<PortIndex<P>>)> = BTreeMap::new();
+        let mut topo = TopoSort::<_, HashSet<PortIndex<P>>>::new(
             graph,
             source_nodes,
             Direction::Outgoing,
@@ -217,7 +221,7 @@ impl Boundary {
 
             // Collect the reaching ports, plus any ports in the node itself.
             // Removes the node from the input_nodes map.
-            let mut reaching_ports: HashSet<PortIndex> =
+            let mut reaching_ports: HashSet<PortIndex<P>> =
                 input_nodes.remove(&node).into_iter().flatten().collect();
 
             // Add the reaching ports from the input neighbours.
@@ -267,9 +271,9 @@ impl Boundary {
     /// See [`PortOrdering::is_stronger_than`] for more information.
     pub fn is_stronger_than(
         &self,
-        other: &Boundary,
-        self_graph: &impl LinkView,
-        other_graph: &impl LinkView,
+        other: &Boundary<P>,
+        self_graph: &impl LinkView<PortIndexBase = P>,
+        other_graph: &impl LinkView<PortIndexBase = P>,
     ) -> bool {
         let self_ordering = self.port_ordering(self_graph);
         let other_ordering = other.port_ordering(other_graph);
@@ -278,19 +282,19 @@ impl Boundary {
 
     /// Returns the input port indices in the boundary.
     #[inline]
-    pub fn input_indices(&self) -> &[PortIndex] {
+    pub fn input_indices(&self) -> &[PortIndex<P>] {
         &self.inputs
     }
 
     /// Returns the output port indices in the boundary.
     #[inline]
-    pub fn output_indices(&self) -> &[PortIndex] {
+    pub fn output_indices(&self) -> &[PortIndex<P>] {
         &self.outputs
     }
 
     /// Iterate over the [`PortIndex`]es in the boundary. The iterator first
     /// yields the input ports, then the output ports.
-    pub fn port_indices(&self) -> impl Iterator<Item = PortIndex> + '_ {
+    pub fn port_indices(&self) -> impl Iterator<Item = PortIndex<P>> + '_ {
         self.inputs
             .iter()
             .copied()
@@ -301,10 +305,10 @@ impl Boundary {
     ///
     /// Starts just inside the boundaries and follow each edge that is not itself
     /// a boundary. Note that the nodes are explored in arbitrary order.
-    pub(crate) fn internal_nodes<'g>(
-        &self,
-        graph: &'g impl LinkView,
-    ) -> impl Iterator<Item = NodeIndex> + 'g {
+    pub(crate) fn internal_nodes<'g, G: LinkView<PortIndexBase = P>>(
+        &'g self,
+        graph: &'g G,
+    ) -> impl Iterator<Item = NodeIndex<G::NodeIndexBase>> + 'g {
         // For every visited edge, we mark both ports as visited
         let mut visited = BTreeSet::new();
 
@@ -451,11 +455,14 @@ pub(crate) mod test {
     use std::collections::BTreeSet;
 
     use crate::view::Subgraph;
-    use crate::{LinkMut, MultiPortGraph, PortMut};
+    use crate::{LinkMut, PortMut};
 
     use super::*;
     use itertools::Itertools;
     use rstest::{fixture, rstest};
+
+    type MultiPortGraph = crate::MultiPortGraph<u32, u32, u16>;
+    type NodeIndex = crate::NodeIndex<u32>;
 
     /// A complete bipartite graph with `N` input nodes and `M` output nodes.
     ///

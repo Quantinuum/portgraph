@@ -241,9 +241,16 @@ mod test {
     use rstest::{fixture, rstest};
 
     use crate::view::Region;
-    use crate::{Hierarchy, LinkMut, NodeIndex, PortGraph, PortMut, PortView, Weights};
+    use crate::LinkMut;
+    use crate::PortMut;
+    use crate::PortView;
 
     use super::{DotFormat, MermaidFormat, NodeStyle, PresentationStyle};
+
+    type PortGraph = crate::PortGraph<u32, u32, u16>;
+    type Hierarchy = crate::Hierarchy<u32>;
+    type NodeIndex = crate::NodeIndex<u32>;
+    type Weights<N, P> = crate::Weights<N, P, u32, u32>;
 
     /// A simple flat graph with some nodes and edges.
     #[fixture]
@@ -399,7 +406,7 @@ mod test {
     fn mermaid_output<WN: Display + Clone, WP>(
         #[case] graph_elems: (
             &str,
-            impl MermaidFormat,
+            impl MermaidFormat<NodeIndexBase = u32, PortIndexBase = u32>,
             Option<Hierarchy>,
             Option<Weights<WN, WP>>,
             Option<impl FnMut(NodeIndex) -> NodeStyle>,
@@ -435,7 +442,7 @@ mod test {
     fn dot_output<WN: Display + Clone, WP: Display + Clone>(
         #[case] graph_elems: (
             &str,
-            impl DotFormat,
+            impl DotFormat<NodeIndexBase = u32, PortIndexBase = u32>,
             Option<Hierarchy>,
             Option<Weights<WN, WP>>,
             Option<impl FnMut(NodeIndex) -> NodeStyle>,

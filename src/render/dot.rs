@@ -9,11 +9,12 @@ use crate::{Direction, Hierarchy, LinkView, NodeIndex, PortIndex, Weights};
 use super::{EdgeStyle, NodeStyle, PortStyle, PresentationStyle};
 
 /// Configurable mermaid formatter for a `PortGraph`.
+#[allow(clippy::type_complexity)]
 pub struct DotFormatter<'g, G: LinkView> {
     graph: &'g G,
-    forest: Option<&'g Hierarchy>,
-    node_style: Option<Box<dyn FnMut(NodeIndex) -> NodeStyle + 'g>>,
-    port_style: Option<Box<dyn FnMut(PortIndex) -> PortStyle + 'g>>,
+    forest: Option<&'g Hierarchy<G::NodeIndexBase>>,
+    node_style: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> NodeStyle + 'g>>,
+    port_style: Option<Box<dyn FnMut(PortIndex<G::PortIndexBase>) -> PortStyle + 'g>>,
     #[allow(clippy::type_complexity)]
     edge_style: Option<Box<dyn FnMut(G::LinkEndpoint, G::LinkEndpoint) -> EdgeStyle + 'g>>,
 }
@@ -34,19 +35,25 @@ where
     }
 
     /// Set the `Hierarchy` to use for the graph.
-    pub fn with_hierarchy(mut self, forest: &'g Hierarchy) -> Self {
+    pub fn with_hierarchy(mut self, forest: &'g Hierarchy<G::NodeIndexBase>) -> Self {
         self.forest = Some(forest);
         self
     }
 
     /// Set the function to use to get the style of a node.
-    pub fn with_node_style(mut self, node_style: impl FnMut(NodeIndex) -> NodeStyle + 'g) -> Self {
+    pub fn with_node_style(
+        mut self,
+        node_style: impl FnMut(NodeIndex<G::NodeIndexBase>) -> NodeStyle + 'g,
+    ) -> Self {
         self.node_style = Some(Box::new(node_style));
         self
     }
 
     /// Set the function to use to get the style of a port.
-    pub fn with_port_style(mut self, port_style: impl FnMut(PortIndex) -> PortStyle + 'g) -> Self {
+    pub fn with_port_style(
+        mut self,
+        port_style: impl FnMut(PortIndex<G::PortIndexBase>) -> PortStyle + 'g,
+    ) -> Self {
         self.port_style = Some(Box::new(port_style));
         self
     }
@@ -64,7 +71,10 @@ where
     ///
     /// This is a convenience method to set the node and port styles based on the weight values.
     /// It overrides any previous node or port style set.
-    pub fn with_weights<'w, N, P>(self, weights: &'w Weights<N, P>) -> Self
+    pub fn with_weights<'w, N, P>(
+        self,
+        weights: &'w Weights<N, P, G::NodeIndexBase, G::PortIndexBase>,
+    ) -> Self
     where
         'w: 'g,
         N: Display + Clone,
@@ -87,7 +97,7 @@ where
     }
 
     /// Get the style of a node, using a default if none is set.
-    fn node_style(&mut self, node: NodeIndex) -> NodeStyle {
+    fn node_style(&mut self, node: NodeIndex<G::NodeIndexBase>) -> NodeStyle {
         self.node_style
             .as_mut()
             .map(|f| f(node))
@@ -95,7 +105,7 @@ where
     }
 
     /// Get the style of a port, using a default if none is set.
-    fn port_style(&mut self, port: PortIndex) -> PortStyle {
+    fn port_style(&mut self, port: PortIndex<G::PortIndexBase>) -> PortStyle {
         self.port_style
             .as_mut()
             .map(|f| f(port))
@@ -165,7 +175,11 @@ where
 
     /// Compute the rendered port styles for a node. Returns a vector with a
     /// port id, a cell style string, and a label for ports to be shown.
-    fn get_port_strings(&mut self, node: NodeIndex, direction: Direction) -> Vec<PortCellStrings> {
+    fn get_port_strings(
+        &mut self,
+        node: NodeIndex<G::NodeIndexBase>,
+        direction: Direction,
+    ) -> Vec<PortCellStrings> {
         let dir = match direction {
             Direction::Incoming => "in",
             Direction::Outgoing => "out",
@@ -218,7 +232,7 @@ where
     /// If the port is linked, outputs the edge in dot format.
     fn get_edge_dot(
         &mut self,
-        from_node: NodeIndex,
+        from_node: NodeIndex<G::NodeIndexBase>,
         from: G::LinkEndpoint,
         to: G::LinkEndpoint,
     ) -> String {
@@ -238,7 +252,7 @@ where
 
     fn hierarchy_strings(&mut self, dot: &mut String) {
         if let Some(forest) = self.forest {
-            let hier_node_id = |n: NodeIndex| format!("hier{}", n.index());
+            let hier_node_id = |n: NodeIndex<G::NodeIndexBase>| format!("hier{}", n.index());
 
             for n in self.graph.nodes_iter() {
                 let node_str = format!(

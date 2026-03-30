@@ -1,5 +1,6 @@
 //! This module provides functionality for convexity checking in directed acyclic graphs.
 use crate::algorithms::{toposort, ConvexChecker};
+use crate::index::IndexBase;
 use crate::{
     Direction, LinkError, LinkMut, LinkView, NodeIndex, PortIndex, PortMut, PortOffset, PortView,
 };
@@ -11,34 +12,34 @@ use thiserror::Error;
 /// Error type for [`DynamicTopoSort`].
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 #[non_exhaustive]
-pub enum DynamicTopoSortError {
+pub enum DynamicTopoSortError<N: IndexBase = u32> {
     /// The referenced node has not been added to the topological order.
     #[error("{node:?} has not been added to the topological order.")]
     InvalidNode {
         /// The missing node.
-        node: NodeIndex,
+        node: NodeIndex<N>,
     },
     /// Connecting the nodes would create a cycle.
     #[error("Connecting {from:?} to {to:?} would create a cycle in the DAG.")]
     WouldCreateCycle {
         /// Source of the edge.
-        from: NodeIndex,
+        from: NodeIndex<N>,
         /// Target of the edge.
-        to: NodeIndex,
+        to: NodeIndex<N>,
     },
 }
 /// Maintains a dynamic topological order for a directed acyclic graph (DAG) using Pearce and Kelly's algorithm.
 #[derive(Default, Clone, Debug)]
-pub struct DynamicTopoSort {
+pub struct DynamicTopoSort<N: IndexBase = u32> {
     // Current topological order
-    order: Vec<NodeIndex>,
+    order: Vec<NodeIndex<N>>,
     // Node ID to position in `order`
-    node_to_pos: HashMap<NodeIndex, usize>,
+    node_to_pos: HashMap<NodeIndex<N>, usize>,
 }
 
-impl DynamicTopoSort {
+impl<N: IndexBase> DynamicTopoSort<N> {
     /// Initializes the topological order for the given graph.
-    pub fn with_graph<G: LinkView + PortView>(graph: &G) -> Self {
+    pub fn with_graph<G: LinkView<NodeIndexBase = N> + PortView>(graph: &G) -> Self {
         let num_nodes_hint = graph.nodes_iter().size_hint().1.unwrap_or_default();
         let mut topo = Self {
             order: Vec::with_capacity(num_nodes_hint),
@@ -47,7 +48,8 @@ impl DynamicTopoSort {
         let source = graph
             .nodes_iter()
             .filter(|&n| graph.input_neighbours(n).next().is_none());
-        let topo_order = toposort::<_, HashSet<PortIndex>>(graph, source, Direction::Outgoing);
+        let topo_order =
+            toposort::<_, HashSet<PortIndex<G::PortIndexBase>>>(graph, source, Direction::Outgoing);
         topo.order = topo_order.collect();
         for (i, &node) in topo.order.iter().enumerate() {
             topo.node_to_pos.insert(node, i);
@@ -56,7 +58,7 @@ impl DynamicTopoSort {
     }
 
     /// Adds a new node to the graph, placing it at the end of the order.
-    pub fn add_node(&mut self, node: NodeIndex) {
+    pub fn add_node(&mut self, node: NodeIndex<N>) {
         if self.node_to_pos.contains_key(&node) {
             return; // Node already exists
         }
@@ -66,12 +68,12 @@ impl DynamicTopoSort {
     }
 
     /// Adds an edge and updates the topological order, returning an error if a cycle is created.
-    pub fn connect_nodes<G: LinkView>(
+    pub fn connect_nodes<G: LinkView<NodeIndexBase = N>>(
         &mut self,
-        from: NodeIndex,
-        to: NodeIndex,
+        from: NodeIndex<N>,
+        to: NodeIndex<N>,
         graph: &G,
-    ) -> Result<(), DynamicTopoSortError> {
+    ) -> Result<(), DynamicTopoSortError<N>> {
         if !self.node_to_pos.contains_key(&from) {
             return Err(DynamicTopoSortError::InvalidNode { node: from });
         }
@@ -90,7 +92,7 @@ impl DynamicTopoSort {
     }
 
     /// Removes a node and updates the topological order.
-    pub fn remove_node(&mut self, node: NodeIndex) -> Result<(), DynamicTopoSortError> {
+    pub fn remove_node(&mut self, node: NodeIndex<N>) -> Result<(), DynamicTopoSortError<N>> {
         if let Some(pos) = self.node_to_pos.remove(&node) {
             self.order.remove(pos);
             for (i, &n) in self.order.iter().enumerate() {
@@ -103,12 +105,12 @@ impl DynamicTopoSort {
     }
 
     /// Removes an edge and updates the topological order if necessary.
-    pub fn disconnect_nodes<G: LinkView>(
+    pub fn disconnect_nodes<G: LinkView<NodeIndexBase = N>>(
         &mut self,
-        from: NodeIndex,
-        to: NodeIndex,
+        from: NodeIndex<N>,
+        to: NodeIndex<N>,
         _graph: &G,
-    ) -> Result<(), DynamicTopoSortError> {
+    ) -> Result<(), DynamicTopoSortError<N>> {
         if !self.node_to_pos.contains_key(&from) {
             return Err(DynamicTopoSortError::InvalidNode { node: from });
         }
@@ -119,7 +121,12 @@ impl DynamicTopoSort {
     }
 
     /// Checks if `start` can reach `target` via existing edges (standard BFS for cycle detection).
-    fn would_create_cycle<G: LinkView>(&self, from: NodeIndex, to: NodeIndex, graph: &G) -> bool {
+    fn would_create_cycle<G: LinkView<NodeIndexBase = N>>(
+        &self,
+        from: NodeIndex<N>,
+        to: NodeIndex<N>,
+        graph: &G,
+    ) -> bool {
         let from_pos = *self.node_to_pos.get(&from).unwrap_or(&usize::MAX);
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
@@ -143,7 +150,12 @@ impl DynamicTopoSort {
     }
 
     /// Updates the topological order after adding an edge (from, to).
-    fn update_order<G: LinkView>(&mut self, from: NodeIndex, to: NodeIndex, graph: &G) {
+    fn update_order<G: LinkView<NodeIndexBase = N>>(
+        &mut self,
+        from: NodeIndex<N>,
+        to: NodeIndex<N>,
+        graph: &G,
+    ) {
         let from_pos = *self.node_to_pos.get(&from).unwrap();
         let to_pos = *self.node_to_pos.get(&to).unwrap();
         if from_pos < to_pos {
@@ -162,24 +174,24 @@ impl DynamicTopoSort {
     }
 
     /// Computes the future cone from a starting node, up to position `ub`.
-    fn cone<G: LinkView>(
+    fn cone<G: LinkView<NodeIndexBase = N>>(
         &self,
-        start: NodeIndex,
+        start: NodeIndex<N>,
         bound: usize,
         graph: &G,
         dir: Direction,
-    ) -> Vec<NodeIndex> {
+    ) -> Vec<NodeIndex<N>> {
         let mut visited = HashSet::new();
         let mut cone = Vec::new();
         self.dfs(start, &mut visited, &mut cone, bound, graph, dir);
         cone
     }
 
-    fn dfs<G: LinkView>(
+    fn dfs<G: LinkView<NodeIndexBase = N>>(
         &self,
-        n: NodeIndex,
-        visited: &mut HashSet<NodeIndex>,
-        cone: &mut Vec<NodeIndex>,
+        n: NodeIndex<N>,
+        visited: &mut HashSet<NodeIndex<N>>,
+        cone: &mut Vec<NodeIndex<N>>,
         bound: usize,
         graph: &G,
         dir: Direction,
@@ -212,17 +224,17 @@ impl DynamicTopoSort {
 
     /// Returns the current topological order (for testing or inspection).
     #[allow(dead_code)]
-    pub fn get_order(&self) -> &Vec<NodeIndex> {
+    pub fn get_order(&self) -> &Vec<NodeIndex<N>> {
         &self.order
     }
 
-    fn has_path_outside_subgraph<G: LinkView>(
+    fn has_path_outside_subgraph<G: LinkView<NodeIndexBase = N>>(
         &self,
-        start: NodeIndex,
-        end: NodeIndex,
+        start: NodeIndex<N>,
+        end: NodeIndex<N>,
         min_pos: usize,
         max_pos: usize,
-        nodes: &HashSet<NodeIndex>,
+        nodes: &HashSet<NodeIndex<N>>,
         graph: &G,
     ) -> bool {
         let mut visited = HashSet::new();
@@ -248,13 +260,13 @@ impl DynamicTopoSort {
     }
 
     /// Checks if `start` can reach any input within position bounds, going outside `nodes`.
-    fn can_reach_inputs<G: LinkView + PortView>(
+    fn can_reach_inputs<G: LinkView<NodeIndexBase = N> + PortView>(
         &self,
-        start: NodeIndex,
+        start: NodeIndex<N>,
         min_pos: usize,
         max_pos: usize,
-        nodes: &HashSet<NodeIndex>,
-        inputs: &[PortIndex],
+        nodes: &HashSet<NodeIndex<N>>,
+        inputs: &[PortIndex<G::PortIndexBase>],
         graph: &G,
     ) -> bool {
         let mut visited = HashSet::new();
@@ -290,8 +302,8 @@ impl DynamicTopoSort {
 }
 
 /// A dynamic topological convex checker for portgraphs.
-pub struct DynamicTopoConvexChecker<G> {
-    topo_sort: DynamicTopoSort,
+pub struct DynamicTopoConvexChecker<G: PortView> {
+    topo_sort: DynamicTopoSort<G::NodeIndexBase>,
     graph: G,
 }
 
@@ -302,7 +314,7 @@ where
     /// Creates a new convexity checker for the given graph.
     pub fn new(graph: G) -> Self {
         Self {
-            topo_sort: DynamicTopoSort::with_graph(&graph),
+            topo_sort: DynamicTopoSort::<G::NodeIndexBase>::with_graph(&graph),
             graph,
         }
     }
@@ -310,31 +322,33 @@ where
 
 /// Implement PortView for DynamicTopoConvexChecker
 impl<G: PortView> PortView for DynamicTopoConvexChecker<G> {
+    type NodeIndexBase = G::NodeIndexBase;
+    type PortIndexBase = G::PortIndexBase;
     type PortOffsetBase = G::PortOffsetBase;
 
     delegate! {
         to self.graph {
-            fn port_direction(&self, port: impl Into<PortIndex>) -> Option<Direction>;
-            fn port_node(&self, port: impl Into<PortIndex>) -> Option<NodeIndex>;
-            fn port_offset(&self, port: impl Into<PortIndex>) -> Option<PortOffset<G::PortOffsetBase>>;
-            fn port_index(&self, node: NodeIndex, offset: PortOffset<G::PortOffsetBase>) -> Option<PortIndex>;
-            fn ports(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortIndex> + Clone;
-            fn all_ports(&self, node: NodeIndex) -> impl Iterator<Item = PortIndex> + Clone;
-            fn input(&self, node: NodeIndex, offset: usize) -> Option<PortIndex>;
-            fn output(&self, node: NodeIndex, offset: usize) -> Option<PortIndex>;
-            fn num_ports(&self, node: NodeIndex, direction: Direction) -> usize;
-            fn port_offsets(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortOffset<G::PortOffsetBase>> + Clone;
-            fn all_port_offsets(&self, node: NodeIndex) -> impl Iterator<Item = PortOffset<G::PortOffsetBase>> + Clone;
-            fn contains_node(&self, node: NodeIndex) -> bool;
-            fn contains_port(&self, port: PortIndex) -> bool;
+            fn port_direction(&self, port: impl Into<PortIndex<G::PortIndexBase>>) -> Option<Direction>;
+            fn port_node(&self, port: impl Into<PortIndex<G::PortIndexBase>>) -> Option<NodeIndex<G::NodeIndexBase>>;
+            fn port_offset(&self, port: impl Into<PortIndex<G::PortIndexBase>>) -> Option<PortOffset<G::PortOffsetBase>>;
+            fn port_index(&self, node: NodeIndex<G::NodeIndexBase>, offset: PortOffset<G::PortOffsetBase>) -> Option<PortIndex<G::PortIndexBase>>;
+            fn ports(&self, node: NodeIndex<G::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = PortIndex<G::PortIndexBase>> + Clone;
+            fn all_ports(&self, node: NodeIndex<G::NodeIndexBase>) -> impl Iterator<Item = PortIndex<G::PortIndexBase>> + Clone;
+            fn input(&self, node: NodeIndex<G::NodeIndexBase>, offset: usize) -> Option<PortIndex<G::PortIndexBase>>;
+            fn output(&self, node: NodeIndex<G::NodeIndexBase>, offset: usize) -> Option<PortIndex<G::PortIndexBase>>;
+            fn num_ports(&self, node: NodeIndex<G::NodeIndexBase>, direction: Direction) -> usize;
+            fn port_offsets(&self, node: NodeIndex<G::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = PortOffset<G::PortOffsetBase>> + Clone;
+            fn all_port_offsets(&self, node: NodeIndex<G::NodeIndexBase>) -> impl Iterator<Item = PortOffset<G::PortOffsetBase>> + Clone;
+            fn contains_node(&self, node: NodeIndex<G::NodeIndexBase>) -> bool;
+            fn contains_port(&self, port: PortIndex<G::PortIndexBase>) -> bool;
             fn is_empty(&self) -> bool;
             fn node_count(&self) -> usize;
             fn port_count(&self) -> usize;
-            fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex> + Clone;
-            fn ports_iter(&self) -> impl Iterator<Item = PortIndex> + Clone;
+            fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex<G::NodeIndexBase>> + Clone;
+            fn ports_iter(&self) -> impl Iterator<Item = PortIndex<G::PortIndexBase>> + Clone;
             fn node_capacity(&self) -> usize;
             fn port_capacity(&self) -> usize;
-            fn node_port_capacity(&self, node: NodeIndex) -> usize;
+            fn node_port_capacity(&self, node: NodeIndex<G::NodeIndexBase>) -> usize;
         }
     }
 }
@@ -345,26 +359,26 @@ impl<G: LinkView> LinkView for DynamicTopoConvexChecker<G> {
 
     delegate! {
         to self.graph {
-            fn get_connections(&self, from: NodeIndex, to: NodeIndex) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
-            fn port_links(&self, port: PortIndex) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
-            fn links(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
-            fn all_links(&self, node: NodeIndex) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
-            fn neighbours(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = NodeIndex> + Clone;
-            fn all_neighbours(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + Clone;
+            fn get_connections(&self, from: NodeIndex<G::NodeIndexBase>, to: NodeIndex<G::NodeIndexBase>) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn port_links(&self, port: PortIndex<G::PortIndexBase>) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn links(&self, node: NodeIndex<G::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn all_links(&self, node: NodeIndex<G::NodeIndexBase>) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn neighbours(&self, node: NodeIndex<G::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = NodeIndex<G::NodeIndexBase>> + Clone;
+            fn all_neighbours(&self, node: NodeIndex<G::NodeIndexBase>) -> impl Iterator<Item = NodeIndex<G::NodeIndexBase>> + Clone;
             fn link_count(&self) -> usize;
         }
     }
 }
 
 /// Implement PortMut for DynamicTopoConvexChecker
-impl<G: PortMut> PortMut for DynamicTopoConvexChecker<G> {
-    fn add_node(&mut self, inputs: usize, outputs: usize) -> NodeIndex {
+impl<G: PortMut + LinkView> PortMut for DynamicTopoConvexChecker<G> {
+    fn add_node(&mut self, inputs: usize, outputs: usize) -> NodeIndex<G::NodeIndexBase> {
         let node = self.graph.add_node(inputs, outputs);
         self.topo_sort.add_node(node);
         node
     }
 
-    fn remove_node(&mut self, node: NodeIndex) {
+    fn remove_node(&mut self, node: NodeIndex<G::NodeIndexBase>) {
         self.graph.remove_node(node);
         self.topo_sort.remove_node(node).expect("Node not found");
     }
@@ -373,30 +387,39 @@ impl<G: PortMut> PortMut for DynamicTopoConvexChecker<G> {
         to self.graph {
             fn clear(&mut self);
             fn reserve(&mut self, nodes: usize, ports: usize);
-            fn set_num_ports<F: FnMut(PortIndex, crate::portgraph::PortOperation)>(&mut self, node: NodeIndex, inputs: usize, outputs: usize, rekey: F);
-            fn swap_nodes(&mut self, a: NodeIndex, b: NodeIndex);
-            fn compact_nodes<F: FnMut(NodeIndex, NodeIndex)>(&mut self, rekey: F);
-            fn compact_ports<F: FnMut(PortIndex, PortIndex)>(&mut self, rekey: F);
+            fn set_num_ports<F: FnMut(PortIndex<G::PortIndexBase>, crate::portgraph::PortOperation<G::PortIndexBase>)>(&mut self, node: NodeIndex<G::NodeIndexBase>, inputs: usize, outputs: usize, rekey: F);
+            fn swap_nodes(&mut self, a: NodeIndex<G::NodeIndexBase>, b: NodeIndex<G::NodeIndexBase>);
+            fn compact_nodes<F: FnMut(NodeIndex<G::NodeIndexBase>, NodeIndex<G::NodeIndexBase>)>(&mut self, rekey: F);
+            fn compact_ports<F: FnMut(PortIndex<G::PortIndexBase>, PortIndex<G::PortIndexBase>)>(&mut self, rekey: F);
             fn shrink_to_fit(&mut self);
         }
     }
 }
 
 /// Implement LinkMut for DynamicTopoConvexChecker
-impl<G: LinkMut> LinkMut for DynamicTopoConvexChecker<G> {
+impl<G: LinkMut + PortView> LinkMut for DynamicTopoConvexChecker<G> {
     fn link_ports(
         &mut self,
-        from: PortIndex,
-        to: PortIndex,
-    ) -> Result<(G::LinkEndpoint, G::LinkEndpoint), LinkError<G::PortOffsetBase>> {
-        let from_node = self
-            .graph
-            .port_node(from)
-            .ok_or(LinkError::UnknownPort { port: from })?;
-        let to_node = self
-            .graph
-            .port_node(to)
-            .ok_or(LinkError::UnknownPort { port: to })?;
+        from: PortIndex<G::PortIndexBase>,
+        to: PortIndex<G::PortIndexBase>,
+    ) -> Result<
+        (G::LinkEndpoint, G::LinkEndpoint),
+        LinkError<G::NodeIndexBase, G::PortIndexBase, G::PortOffsetBase>,
+    > {
+        let from_node = self.graph.port_node(from).ok_or(LinkError::<
+            G::NodeIndexBase,
+            G::PortIndexBase,
+            G::PortOffsetBase,
+        >::UnknownPort {
+            port: from,
+        })?;
+        let to_node = self.graph.port_node(to).ok_or(LinkError::<
+            G::NodeIndexBase,
+            G::PortIndexBase,
+            G::PortOffsetBase,
+        >::UnknownPort {
+            port: to,
+        })?;
         if self
             .topo_sort
             .would_create_cycle(to_node, from_node, &self.graph)
@@ -407,7 +430,13 @@ impl<G: LinkMut> LinkMut for DynamicTopoConvexChecker<G> {
         self.topo_sort
             .connect_nodes(from_node, to_node, &self.graph)
             .map_err(|e| match e {
-                DynamicTopoSortError::InvalidNode { .. } => LinkError::UnknownPort { port: from },
+                DynamicTopoSortError::InvalidNode { .. } => LinkError::<
+                    G::NodeIndexBase,
+                    G::PortIndexBase,
+                    G::PortOffsetBase,
+                >::UnknownPort {
+                    port: from,
+                },
                 DynamicTopoSortError::WouldCreateCycle { .. } => {
                     panic!("Cycle detected despite earlier check")
                 }
@@ -415,7 +444,7 @@ impl<G: LinkMut> LinkMut for DynamicTopoConvexChecker<G> {
         Ok(result)
     }
 
-    fn unlink_port(&mut self, port: PortIndex) -> Option<G::LinkEndpoint> {
+    fn unlink_port(&mut self, port: PortIndex<G::PortIndexBase>) -> Option<G::LinkEndpoint> {
         let result = self.graph.unlink_port(port);
         if result.is_some() {
             // Note: We don’t have access to the linked port’s endpoint here, so we assume the disconnect logic is sufficient
@@ -438,13 +467,16 @@ impl<G> ConvexChecker for DynamicTopoConvexChecker<G>
 where
     G: PortView + LinkView,
 {
+    type NodeIndexBase = G::NodeIndexBase;
+    type PortIndexBase = G::PortIndexBase;
+
     fn is_convex(
         &self,
-        nodes: impl IntoIterator<Item = NodeIndex>,
-        inputs: impl IntoIterator<Item = PortIndex>,
-        outputs: impl IntoIterator<Item = PortIndex>,
+        nodes: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
+        inputs: impl IntoIterator<Item = PortIndex<G::PortIndexBase>>,
+        outputs: impl IntoIterator<Item = PortIndex<G::PortIndexBase>>,
     ) -> bool {
-        let nodes: HashSet<NodeIndex> = nodes.into_iter().collect();
+        let nodes: HashSet<NodeIndex<G::NodeIndexBase>> = nodes.into_iter().collect();
         for &node in &nodes {
             if !self.topo_sort.node_to_pos.contains_key(&node) {
                 return false;
@@ -453,8 +485,8 @@ where
         if nodes.len() < 2 {
             return true;
         }
-        let inputs: Vec<PortIndex> = inputs.into_iter().collect();
-        let outputs: Vec<PortIndex> = outputs.into_iter().collect();
+        let inputs: Vec<PortIndex<G::PortIndexBase>> = inputs.into_iter().collect();
+        let outputs: Vec<PortIndex<G::PortIndexBase>> = outputs.into_iter().collect();
         let mut min_pos = usize::MAX;
         let mut max_pos = 0;
 
@@ -517,8 +549,12 @@ where
 mod tests {
     use super::*;
     use crate::algorithms::ConvexChecker;
-    use crate::{LinkMut, NodeIndex, PortGraph};
+    use crate::LinkMut;
     use std::collections::HashSet;
+
+    type PortGraph = crate::PortGraph<u32, u32, u16>;
+    type NodeIndex = crate::NodeIndex<u32>;
+    type DynamicTopoSortError = super::DynamicTopoSortError<u32>;
 
     #[test]
     fn test_convex_with_ports() {
@@ -552,7 +588,10 @@ mod tests {
         );
     }
 
-    fn is_valid_topological_order<G: LinkView>(topo: &DynamicTopoSort, graph: &G) -> bool {
+    fn is_valid_topological_order<G: LinkView<NodeIndexBase = u32>>(
+        topo: &DynamicTopoSort<u32>,
+        graph: &G,
+    ) -> bool {
         for &node in topo.get_order() {
             let node_pos = *topo.node_to_pos.get(&node).unwrap();
             for neighbor in graph.output_neighbours(node) {

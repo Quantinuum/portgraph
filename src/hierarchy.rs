@@ -14,6 +14,8 @@
 //!
 //! ```
 //! # use ::portgraph::*;
+//! # use ::portgraph::PortGraph;
+//! # use ::portgraph::Hierarchy;
 //! let mut graph: PortGraph = PortGraph::new();
 //! let mut hierarchy = Hierarchy::new();
 //!
@@ -54,7 +56,7 @@ use std::iter::FusedIterator;
 use std::mem;
 use thiserror::Error;
 
-use crate::index::MaybeNodeIndex;
+use crate::index::{IndexBase, MaybeNodeIndex};
 use crate::unmanaged::UnmanagedDenseMap;
 use crate::{NodeIndex, SecondaryMap};
 
@@ -69,13 +71,13 @@ use serde::{Deserialize, Serialize};
 /// [`PortGraph`]: crate::portgraph::PortGraph
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-pub struct Hierarchy {
-    data: UnmanagedDenseMap<NodeIndex, NodeData>,
+pub struct Hierarchy<N: IndexBase = u32> {
+    data: UnmanagedDenseMap<NodeIndex<N>, NodeData<N>>,
 }
 
-impl Hierarchy {
+impl<N: IndexBase> Hierarchy<N> {
     /// Creates a new empty layout.
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             data: UnmanagedDenseMap::with_default(NodeData::new()),
         }
@@ -89,25 +91,25 @@ impl Hierarchy {
     }
 }
 
-impl Default for Hierarchy {
+impl<N: IndexBase> Default for Hierarchy<N> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Hierarchy {
+impl<N: IndexBase> Hierarchy<N> {
     #[inline]
-    fn get_mut(&mut self, node: NodeIndex) -> &mut NodeData {
+    fn get_mut(&mut self, node: NodeIndex<N>) -> &mut NodeData<N> {
         self.data.get_mut(node)
     }
 
     #[inline]
-    fn try_get_mut(&mut self, node: NodeIndex) -> Option<&mut NodeData> {
+    fn try_get_mut(&mut self, node: NodeIndex<N>) -> Option<&mut NodeData<N>> {
         self.data.try_get_mut(node)
     }
 
     #[inline]
-    fn get(&self, node: NodeIndex) -> &NodeData {
+    fn get(&self, node: NodeIndex<N>) -> &NodeData<N> {
         self.data.get(node)
     }
 
@@ -121,7 +123,11 @@ impl Hierarchy {
     /// # Panics
     ///
     /// Panics when the parent node will have more than `u32::MAX` children.
-    pub fn push_child(&mut self, node: NodeIndex, parent: NodeIndex) -> Result<(), AttachError> {
+    pub fn push_child(
+        &mut self,
+        node: NodeIndex<N>,
+        parent: NodeIndex<N>,
+    ) -> Result<(), AttachError<N>> {
         if !self.cycle_check(node, parent) {
             return Err(AttachError::Cycle { node, parent });
         } else if self.get(node).parent.is_some() {
@@ -132,7 +138,7 @@ impl Hierarchy {
         node_data.parent = parent.into();
 
         let parent_data = self.get_mut(parent);
-        parent_data.children_count += 1;
+        parent_data.children_count += N::one();
         match &mut parent_data.children {
             [_, prev] if prev.is_some() => {
                 let prev = prev.replace(node);
@@ -160,9 +166,9 @@ impl Hierarchy {
     /// Panics when the parent node will have more than `u32::MAX` children.
     pub fn push_front_child(
         &mut self,
-        node: NodeIndex,
-        parent: NodeIndex,
-    ) -> Result<(), AttachError> {
+        node: NodeIndex<N>,
+        parent: NodeIndex<N>,
+    ) -> Result<(), AttachError<N>> {
         if !self.cycle_check(node, parent) {
             return Err(AttachError::Cycle { node, parent });
         } else if self.get(node).parent.is_some() {
@@ -173,7 +179,7 @@ impl Hierarchy {
         node_data.parent = parent.into();
 
         let parent_data = self.get_mut(parent);
-        parent_data.children_count += 1;
+        parent_data.children_count += N::one();
         match &mut parent_data.children {
             [next, _] if next.is_some() => {
                 let next = next.replace(node);
@@ -200,7 +206,11 @@ impl Hierarchy {
     /// # Panics
     ///
     /// Panics when the parent node will have more than `u32::MAX` children.
-    pub fn insert_before(&mut self, node: NodeIndex, before: NodeIndex) -> Result<(), AttachError> {
+    pub fn insert_before(
+        &mut self,
+        node: NodeIndex<N>,
+        before: NodeIndex<N>,
+    ) -> Result<(), AttachError<N>> {
         if self.get(node).parent.is_some() {
             return Err(AttachError::AlreadyAttached { node });
         }
@@ -213,7 +223,7 @@ impl Hierarchy {
             return Err(AttachError::Cycle { node, parent });
         }
 
-        self.get_mut(parent).children_count += 1;
+        self.get_mut(parent).children_count += N::one();
         let before_prev = self.get_mut(before).siblings[0].replace(node);
 
         {
@@ -241,7 +251,11 @@ impl Hierarchy {
     /// # Panics
     ///
     /// Panics when the parent node will have more than `u32::MAX` children.
-    pub fn insert_after(&mut self, node: NodeIndex, after: NodeIndex) -> Result<(), AttachError> {
+    pub fn insert_after(
+        &mut self,
+        node: NodeIndex<N>,
+        after: NodeIndex<N>,
+    ) -> Result<(), AttachError<N>> {
         if self.get(node).parent.is_some() {
             return Err(AttachError::AlreadyAttached { node });
         }
@@ -254,7 +268,7 @@ impl Hierarchy {
             return Err(AttachError::Cycle { node, parent });
         }
 
-        self.get_mut(parent).children_count += 1;
+        self.get_mut(parent).children_count += N::one();
         let after_next = self.get_mut(after).siblings[1].replace(node);
 
         {
@@ -272,7 +286,7 @@ impl Hierarchy {
     }
 
     /// Ensures that making `node` a child of `parent` would not introduce a cycle.
-    fn cycle_check(&self, node: NodeIndex, mut parent: NodeIndex) -> bool {
+    fn cycle_check(&self, node: NodeIndex<N>, mut parent: NodeIndex<N>) -> bool {
         // When `node` does not have any children it can't contain `parent`.
         if self.get(node).children[0].is_none() {
             debug_assert!(self.get(node).children[1].is_none());
@@ -293,13 +307,13 @@ impl Hierarchy {
     /// Detaches a node from its parent, returning the former parent.
     ///
     /// Does nothing and returns `None` when the node is a root.
-    pub fn detach(&mut self, node: NodeIndex) -> Option<NodeIndex> {
+    pub fn detach(&mut self, node: NodeIndex<N>) -> Option<NodeIndex<N>> {
         let node_data = self.try_get_mut(node)?;
         let parent = node_data.parent.take();
         let siblings = mem::take(&mut node_data.siblings);
 
         if let Some(parent) = parent.to_option() {
-            self.get_mut(parent).children_count -= 1;
+            self.get_mut(parent).children_count -= N::one();
 
             if let Some(prev) = siblings[0].to_option() {
                 self.get_mut(prev).siblings[1] = siblings[1];
@@ -320,12 +334,12 @@ impl Hierarchy {
     }
 
     /// Detaches all children from a node.
-    pub fn detach_children(&mut self, node: NodeIndex) {
+    pub fn detach_children(&mut self, node: NodeIndex<N>) {
         let Some(node_data) = self.try_get_mut(node) else {
             return;
         };
 
-        node_data.children_count = 0;
+        node_data.children_count = N::zero();
         let mut child_next = node_data.children[0];
         node_data.children = [None.into(), None.into()];
 
@@ -339,32 +353,32 @@ impl Hierarchy {
 
     /// Removes a node from the hierarchy, detaching it from its parent and
     /// detaching all its children.
-    pub fn remove(&mut self, node: NodeIndex) {
+    pub fn remove(&mut self, node: NodeIndex<N>) {
         self.detach_children(node);
         self.detach(node);
     }
 
     /// Returns a node's parent or `None` if it is a root.
     #[inline]
-    pub fn parent(&self, node: NodeIndex) -> Option<NodeIndex> {
+    pub fn parent(&self, node: NodeIndex<N>) -> Option<NodeIndex<N>> {
         self.get(node).parent.to_option()
     }
 
     /// Returns whether a node is a root.
     #[inline]
-    pub fn is_root(&self, node: NodeIndex) -> bool {
+    pub fn is_root(&self, node: NodeIndex<N>) -> bool {
         self.parent(node).is_none()
     }
 
     /// Returns a node's first child, if any.
     #[inline]
-    pub fn first(&self, parent: NodeIndex) -> Option<NodeIndex> {
+    pub fn first(&self, parent: NodeIndex<N>) -> Option<NodeIndex<N>> {
         self.get(parent).children[0].to_option()
     }
 
     /// Returns a node's last child, if any.
     #[inline]
-    pub fn last(&self, parent: NodeIndex) -> Option<NodeIndex> {
+    pub fn last(&self, parent: NodeIndex<N>) -> Option<NodeIndex<N>> {
         self.get(parent).children[1].to_option()
     }
 
@@ -372,7 +386,7 @@ impl Hierarchy {
     ///
     /// Also returns `None` if the node is a root.
     #[inline]
-    pub fn next(&self, node: NodeIndex) -> Option<NodeIndex> {
+    pub fn next(&self, node: NodeIndex<N>) -> Option<NodeIndex<N>> {
         self.get(node).siblings[1].to_option()
     }
 
@@ -380,20 +394,20 @@ impl Hierarchy {
     ///
     /// Also returns `None` if the node is a root.
     #[inline]
-    pub fn prev(&self, node: NodeIndex) -> Option<NodeIndex> {
+    pub fn prev(&self, node: NodeIndex<N>) -> Option<NodeIndex<N>> {
         self.get(node).siblings[0].to_option()
     }
 
     /// Iterates over the node's children.
     #[inline]
-    pub fn children(&self, node: NodeIndex) -> Children<'_> {
+    pub fn children(&self, node: NodeIndex<N>) -> Children<'_, N> {
         let node_data = self.get(node);
         let [next, prev] = node_data.children;
         Children {
-            layout: self,
+            layout: Some(self),
             next,
             prev,
-            len: node_data.children_count as usize,
+            len: node_data.children_count.to_usize(),
         }
     }
 
@@ -402,27 +416,27 @@ impl Hierarchy {
     /// Traverses the hierarchy in breadth-first order.
     ///
     /// The iterator will yield the node itself first, followed by its children.
-    pub fn descendants(&self, node: NodeIndex) -> Descendants<'_> {
+    pub fn descendants(&self, node: NodeIndex<N>) -> Descendants<'_, N> {
         Descendants {
-            layout: self,
+            layout: Some(self),
             node_queue: NextStates::Root(node),
         }
     }
 
     /// Returns the number of the node's children.
     #[inline]
-    pub fn child_count(&self, node: NodeIndex) -> usize {
-        self.get(node).children_count as usize
+    pub fn child_count(&self, node: NodeIndex<N>) -> usize {
+        self.get(node).children_count.to_usize()
     }
 
     /// Returns whether a node has any children.
     #[inline]
-    pub fn has_children(&self, node: NodeIndex) -> bool {
+    pub fn has_children(&self, node: NodeIndex<N>) -> bool {
         self.child_count(node) > 0
     }
 
     /// Swap the positions of two nodes.
-    pub fn swap_nodes(&mut self, a: NodeIndex, b: NodeIndex) {
+    pub fn swap_nodes(&mut self, a: NodeIndex<N>, b: NodeIndex<N>) {
         if a == b {
             return;
         }
@@ -443,12 +457,13 @@ impl Hierarchy {
 
         // Update the nodes' data, if they are siblings or one is the parent of
         // the other.
-        let rekey_in_value =
-            |val: Option<&mut NodeIndex>, old_other: NodeIndex, new_other: NodeIndex| match val {
-                Some(val) if *val == old_other => *val = new_other,
-                _ => (),
-            };
-        let rekey_in_data = |data: &mut NodeData, old: NodeIndex, new: NodeIndex| {
+        let rekey_in_value = |val: Option<&mut NodeIndex<N>>,
+                              old_other: NodeIndex<N>,
+                              new_other: NodeIndex<N>| match val {
+            Some(val) if *val == old_other => *val = new_other,
+            _ => (),
+        };
+        let rekey_in_data = |data: &mut NodeData<N>, old: NodeIndex<N>, new: NodeIndex<N>| {
             rekey_in_value(data.parent.as_mut(), old, new);
             rekey_in_value(data.children[0].as_mut(), old, new);
             rekey_in_value(data.children[1].as_mut(), old, new);
@@ -467,7 +482,7 @@ impl Hierarchy {
     /// # Panics
     ///
     /// Panics if the index `new` is not a root without any children.
-    pub fn rekey(&mut self, old: NodeIndex, new: NodeIndex) {
+    pub fn rekey(&mut self, old: NodeIndex<N>, new: NodeIndex<N>) {
         if self.get(new) != &NodeData::default() {
             panic!("can not rekey into an occupied slot");
         }
@@ -485,7 +500,7 @@ impl Hierarchy {
 
     /// Update a node's key in its parent's children list.
     #[inline]
-    fn rekey_in_parent(&mut self, data: NodeData, new_node: NodeIndex) {
+    fn rekey_in_parent(&mut self, data: NodeData<N>, new_node: NodeIndex<N>) {
         if let Some(parent) = data.parent.to_option() {
             if data.siblings[0].is_none() {
                 self.get_mut(parent).children.as_mut()[0] = new_node.into();
@@ -498,7 +513,7 @@ impl Hierarchy {
 
     /// Update a node's key in its immediate siblings data.
     #[inline]
-    fn rekey_in_siblings(&mut self, data: NodeData, new: NodeIndex) {
+    fn rekey_in_siblings(&mut self, data: NodeData<N>, new: NodeIndex<N>) {
         if let Some(prev) = data.siblings[0].to_option() {
             self.get_mut(prev).siblings[1] = new.into();
         }
@@ -509,7 +524,7 @@ impl Hierarchy {
 
     /// Update a node's key in it's children data.
     #[inline]
-    fn rekey_in_children(&mut self, data: NodeData, new: NodeIndex) {
+    fn rekey_in_children(&mut self, data: NodeData<N>, new: NodeIndex<N>) {
         let mut next_child = data.children[0];
         while let Some(child) = next_child.to_option() {
             let child_data = self.get_mut(child);
@@ -536,45 +551,45 @@ impl Hierarchy {
     }
 }
 
-impl<'a> From<&'a Hierarchy> for Cow<'a, Hierarchy> {
-    fn from(hierarchy: &'a Hierarchy) -> Self {
+impl<'a, N: IndexBase> From<&'a Hierarchy<N>> for Cow<'a, Hierarchy<N>> {
+    fn from(hierarchy: &'a Hierarchy<N>) -> Self {
         Cow::Borrowed(hierarchy)
     }
 }
 
-impl From<Hierarchy> for Cow<'_, Hierarchy> {
-    fn from(hierarchy: Hierarchy) -> Self {
+impl<N: IndexBase> From<Hierarchy<N>> for Cow<'_, Hierarchy<N>> {
+    fn from(hierarchy: Hierarchy<N>) -> Self {
         Cow::Owned(hierarchy)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-struct NodeData {
+struct NodeData<N: IndexBase> {
     /// The first and last child of the node, if any.
     ///
     /// Either both have a value or none of them do.
-    children: [MaybeNodeIndex<u32>; 2],
+    children: [MaybeNodeIndex<N>; 2],
     /// The number of children
-    children_count: u32,
+    children_count: N,
     /// The parent of a node, if any.
-    parent: MaybeNodeIndex<u32>,
+    parent: MaybeNodeIndex<N>,
     /// The siblings of a node, if any.
-    siblings: [MaybeNodeIndex<u32>; 2],
+    siblings: [MaybeNodeIndex<N>; 2],
 }
 
-impl NodeData {
-    pub const fn new() -> Self {
+impl<N: IndexBase> NodeData<N> {
+    pub fn new() -> Self {
         Self {
-            children: [MaybeNodeIndex::NONE; 2],
-            children_count: 0u32,
-            parent: MaybeNodeIndex::NONE,
-            siblings: [MaybeNodeIndex::NONE; 2],
+            children: [MaybeNodeIndex::new(None); 2],
+            children_count: N::zero(),
+            parent: MaybeNodeIndex::new(None),
+            siblings: [MaybeNodeIndex::new(None); 2],
         }
     }
 }
 
-impl Default for NodeData {
+impl<N: IndexBase> Default for NodeData<N> {
     fn default() -> Self {
         Self::new()
     }
@@ -582,27 +597,26 @@ impl Default for NodeData {
 
 /// Iterator created by [`Hierarchy::children`].
 #[derive(Clone, Debug)]
-pub struct Children<'a> {
-    layout: &'a Hierarchy,
-    next: MaybeNodeIndex<u32>,
-    prev: MaybeNodeIndex<u32>,
+pub struct Children<'a, N: IndexBase> {
+    layout: Option<&'a Hierarchy<N>>,
+    next: MaybeNodeIndex<N>,
+    prev: MaybeNodeIndex<N>,
     len: usize,
 }
 
-impl Default for Children<'static> {
+impl<N: IndexBase> Default for Children<'static, N> {
     fn default() -> Self {
-        static HIERARCHY: Hierarchy = Hierarchy::new();
         Self {
-            layout: &HIERARCHY,
-            next: MaybeNodeIndex::NONE,
-            prev: MaybeNodeIndex::NONE,
+            layout: None,
+            next: MaybeNodeIndex::new(None),
+            prev: MaybeNodeIndex::new(None),
             len: 0,
         }
     }
 }
 
-impl Iterator for Children<'_> {
-    type Item = NodeIndex;
+impl<N: IndexBase> Iterator for Children<'_, N> {
+    type Item = NodeIndex<N>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.len == 0 {
@@ -611,7 +625,7 @@ impl Iterator for Children<'_> {
 
         self.len -= 1;
         let current = self.next.unwrap();
-        self.next = self.layout.next(current).into();
+        self.next = self.layout?.next(current).into();
         Some(current)
     }
 
@@ -621,7 +635,7 @@ impl Iterator for Children<'_> {
     }
 }
 
-impl DoubleEndedIterator for Children<'_> {
+impl<N: IndexBase> DoubleEndedIterator for Children<'_, N> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.len == 0 {
             return None;
@@ -629,45 +643,45 @@ impl DoubleEndedIterator for Children<'_> {
 
         self.len -= 1;
         let current = self.prev.unwrap();
-        self.prev = self.layout.prev(current).into();
+        self.prev = self.layout?.prev(current).into();
         Some(current)
     }
 }
 
-impl ExactSizeIterator for Children<'_> {
+impl<N: IndexBase> ExactSizeIterator for Children<'_, N> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
     }
 }
 
-impl FusedIterator for Children<'_> {}
+impl<N: IndexBase> FusedIterator for Children<'_, N> {}
 
 /// Iterator created by [`Hierarchy::descendants`].
 ///
 /// Traverses the descendants of a node in breadth-first order.
 #[derive(Clone, Debug)]
-pub struct Descendants<'a> {
+pub struct Descendants<'a, N: IndexBase> {
     /// The hierarchy this iterator is iterating over.
-    layout: &'a Hierarchy,
+    layout: Option<&'a Hierarchy<N>>,
     /// A queue of regions to visit.
     ///
     /// For each region, we point to a child node that has not been visited yet.
     /// When a region is visited, we move to the next child node and queue its children region at the end of the queue.
-    node_queue: NextStates,
+    node_queue: NextStates<N>,
 }
 
 /// A queue of nodes to visit next in the [`Descendants`] iterator.
 #[derive(Clone, Debug)]
-enum NextStates {
+enum NextStates<N: IndexBase> {
     /// The iterator hasn't been queried yet. It stores only the root node.
-    Root(NodeIndex),
+    Root(NodeIndex<N>),
     /// We are in the process of exploring the descendants.
     /// This queue does **not** include the root node.
-    Descendants(VecDeque<NodeIndex>),
+    Descendants(VecDeque<NodeIndex<N>>),
 }
 
-impl NextStates {
+impl<N: IndexBase> NextStates<N> {
     /// Returns the number of nodes currently in the queue.
     fn len(&self) -> usize {
         match self {
@@ -677,23 +691,23 @@ impl NextStates {
     }
 }
 
-impl Default for Descendants<'static> {
+impl<N: IndexBase> Default for Descendants<'static, N> {
     fn default() -> Self {
-        static HIERARCHY: Hierarchy = Hierarchy::new();
         Self {
-            layout: &HIERARCHY,
+            layout: None,
             node_queue: NextStates::Descendants(VecDeque::new()),
         }
     }
 }
 
-impl Iterator for Descendants<'_> {
-    type Item = NodeIndex;
+impl<N: IndexBase> Iterator for Descendants<'_, N> {
+    type Item = NodeIndex<N>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let NextStates::Root(root) = &self.node_queue {
             let root = *root;
-            self.node_queue = NextStates::Descendants(VecDeque::from_iter(self.layout.first(root)));
+            self.node_queue =
+                NextStates::Descendants(VecDeque::from_iter(self.layout?.first(root)));
             return Some(root);
         };
         let NextStates::Descendants(queue) = &mut self.node_queue else {
@@ -705,12 +719,12 @@ impl Iterator for Descendants<'_> {
 
         // Check if the node had a next sibling and add it to the front of
         // queue.
-        if let Some(next_sibling) = self.layout.next(next) {
+        if let Some(next_sibling) = self.layout?.next(next) {
             queue.push_front(next_sibling);
         }
 
         // Now add the children region of `next` to the end of the queue.
-        if let Some(child) = self.layout.first(next) {
+        if let Some(child) = self.layout?.first(next) {
             queue.push_back(child);
         }
 
@@ -723,34 +737,40 @@ impl Iterator for Descendants<'_> {
     }
 }
 
-impl FusedIterator for Descendants<'_> {}
+impl<N: IndexBase> FusedIterator for Descendants<'_, N> {}
 
 /// Error produced when trying to attach nodes in the Hierarchy.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 #[allow(missing_docs)]
-pub enum AttachError {
+pub enum AttachError<N: IndexBase = u32> {
     /// The node is already attached to a parent.
     #[error("the node {node:?} is already attached")]
-    AlreadyAttached { node: NodeIndex },
+    AlreadyAttached { node: NodeIndex<N> },
     /// The target node is a root node, and cannot have siblings.
     #[error("can not attach a sibling to root node {root:?}")]
-    RootSibling { root: NodeIndex },
+    RootSibling { root: NodeIndex<N> },
     /// The relation would introduce a cycle.
     #[error("attaching the node {node:?} to {parent:?} would introduce a cycle")]
-    Cycle { node: NodeIndex, parent: NodeIndex },
+    Cycle {
+        node: NodeIndex<N>,
+        parent: NodeIndex<N>,
+    },
 }
 
 #[cfg(test)]
 mod test {
     use itertools::Itertools;
 
-    use crate::{PortGraph, PortMut, PortView};
+    use crate::NodeIndex;
+    use crate::PortGraph;
+    use crate::PortMut;
+    use crate::PortView;
 
     use super::*;
 
     #[test]
     fn test_basic() {
-        let mut hierarchy = Hierarchy::new();
+        let mut hierarchy: Hierarchy = Hierarchy::new();
         let root = NodeIndex::new(4);
 
         assert_eq!(hierarchy.child_count(root), 0);
@@ -815,7 +835,7 @@ mod test {
 
     #[test]
     fn test_detach() {
-        let mut hierarchy = Hierarchy::new();
+        let mut hierarchy: Hierarchy = Hierarchy::new();
         let root = NodeIndex::new(4);
 
         let child0 = NodeIndex::new(0);
@@ -860,7 +880,7 @@ mod test {
 
     #[test]
     fn test_rekey() {
-        let mut hierarchy = Hierarchy::new();
+        let mut hierarchy: Hierarchy = Hierarchy::new();
         let root = NodeIndex::new(4);
 
         let child0 = NodeIndex::new(0);
@@ -916,7 +936,7 @@ mod test {
 
     #[test]
     fn test_swap() {
-        let mut hierarchy = Hierarchy::new();
+        let mut hierarchy: Hierarchy = Hierarchy::new();
         let root = NodeIndex::new(4);
 
         let child0 = NodeIndex::new(0);
@@ -1012,7 +1032,7 @@ mod test {
     #[cfg(feature = "serde")]
     #[test]
     fn hierarchy_serialize() {
-        let mut hierarchy = Hierarchy::new();
+        let mut hierarchy: Hierarchy = Hierarchy::new();
         assert_eq!(crate::portgraph::test::ser_roundtrip(&hierarchy), hierarchy);
         let root = NodeIndex::new(4);
 

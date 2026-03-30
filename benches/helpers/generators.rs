@@ -2,7 +2,12 @@
 
 use std::collections::{BTreeSet, VecDeque};
 
-use portgraph::{Hierarchy, LinkMut, LinkView, NodeIndex, PortGraph, PortMut, PortView, Weights};
+use portgraph::{LinkMut, LinkView, PortMut, PortView};
+
+pub type PortGraph = portgraph::PortGraph<u32, u32, u16>;
+pub type Hierarchy = portgraph::Hierarchy<u32>;
+pub type NodeIndex = portgraph::NodeIndex<u32>;
+pub type Weights = portgraph::Weights<usize, isize, u32, u32>;
 
 /// Create line graph, connected with two parallel edges at each step.
 ///
@@ -99,7 +104,7 @@ pub fn make_square_circuit(n: usize) -> PortGraph {
 }
 
 /// Creates arbitrary weights for the nodes and ports of a graph.
-pub fn make_weights(graph: &PortGraph) -> Weights<usize, isize> {
+pub fn make_weights(graph: &PortGraph) -> Weights {
     let mut weights = Weights::with_capacity(graph.node_count(), graph.port_count());
 
     for (i, node) in graph.nodes_iter().enumerate() {

@@ -20,7 +20,7 @@ use std::mem::take;
 use std::ops::Range;
 use thiserror::Error;
 
-use crate::index::{MaybeNodeIndex, MaybePortIndex, Unsigned};
+use crate::index::{IndexBase, MaybeNodeIndex, MaybePortIndex};
 use crate::view::{LinkMut, PortMut};
 use crate::{Direction, LinkView, NodeIndex, PortIndex, PortOffset, PortView};
 use node_entry::{FreeNodeEntry, NodeEntry, NodeMeta};
@@ -53,9 +53,9 @@ pub use crate::portgraph::iter::{
 /// - `PO`: The unsigned integer type used for port offsets.
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(Clone, PartialEq)]
-pub struct PortGraph<N: Unsigned = u32, P: Unsigned = u32, PO: Unsigned = u16> {
+pub struct PortGraph<N: IndexBase = u32, P: IndexBase = u32, PO: IndexBase = u16> {
     /// Metadata for each node. Free slots form a linked list.
-    node_meta: Vec<NodeEntry<P, PO>>,
+    node_meta: Vec<NodeEntry<N, P, PO>>,
     /// Links from ports to other ports. Free ports slabs (fixed-length lists of
     /// ports) form a linked list, with the next slab index stored in the first
     /// port.
@@ -81,9 +81,9 @@ pub struct PortGraph<N: Unsigned = u32, P: Unsigned = u32, PO: Unsigned = u16> {
 
 #[doc(hidden)]
 #[cfg_attr(feature = "pyo3", pyclass(name = "PortGraph"))]
-pub struct PyPortGraph(pub PortGraph);
+pub struct PyPortGraph(pub PortGraph<u32, u32, u16>);
 
-impl<N: Unsigned, P: Unsigned, PO: Unsigned> PortGraph<N, P, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> PortGraph<N, P, PO> {
     /// Create a new empty [`PortGraph`].
     pub fn new() -> Self {
         Self {
@@ -115,9 +115,9 @@ impl<N: Unsigned, P: Unsigned, PO: Unsigned> PortGraph<N, P, PO> {
     }
 }
 
-impl<PO: Unsigned> PortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> PortGraph<N, P, PO> {
     #[inline]
-    fn alloc_node(&mut self) -> NodeIndex {
+    fn alloc_node(&mut self) -> NodeIndex<N> {
         match self.node_free.to_option() {
             Some(node) => {
                 let free_entry = self.node_meta[node.index()].free_entry().unwrap();
@@ -141,11 +141,11 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
     #[inline]
     fn alloc_ports(
         &mut self,
-        node: NodeIndex,
+        node: NodeIndex<N>,
         incoming: usize,
         outgoing: usize,
         extra_capacity: usize,
-    ) -> NodeMeta<u32, PO> {
+    ) -> NodeMeta<P, PO> {
         let requested = incoming + outgoing + extra_capacity;
         if requested == 0 {
             return NodeMeta::default();
@@ -207,7 +207,7 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
     }
 
     #[inline]
-    fn free_node(&mut self, node: NodeIndex) {
+    fn free_node(&mut self, node: NodeIndex<N>) {
         if let Some(node_free) = self.node_free.to_option() {
             let free_list = self.node_meta[node_free.index()].free_entry_mut().unwrap();
             free_list.prev = node.into();
@@ -220,7 +220,7 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
     ///
     /// Disconnects all links and adds the slab to the free port list.
     #[inline]
-    fn free_ports(&mut self, ports: PortIndex, size: usize) {
+    fn free_ports(&mut self, ports: PortIndex<P>, size: usize) {
         if size > self.port_free.len() {
             self.port_free.resize(size, None.into());
         }
@@ -244,7 +244,7 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
     }
 
     #[inline]
-    fn node_meta_valid(&self, node: NodeIndex) -> Option<NodeMeta<u32, PO>> {
+    fn node_meta_valid(&self, node: NodeIndex<N>) -> Option<NodeMeta<P, PO>> {
         match self.node_meta.get(node.index()) {
             Some(NodeEntry::Node(node_meta)) => Some(*node_meta),
             _ => None,
@@ -253,7 +253,7 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
 
     #[inline]
     #[must_use]
-    fn port_meta_valid(&self, port: PortIndex) -> Option<PortMeta<u32>> {
+    fn port_meta_valid(&self, port: PortIndex<P>) -> Option<PortMeta<N>> {
         self.port_meta.get(port.index()).and_then(|pm| pm.as_meta())
     }
 
@@ -272,12 +272,12 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
     /// If `incoming + outgoing` is more than the allocated port capacity.
     fn resize_ports_inplace<F>(
         &mut self,
-        node: NodeIndex,
+        node: NodeIndex<N>,
         incoming: usize,
         outgoing: usize,
         mut rekey: F,
     ) where
-        F: FnMut(PortIndex, PortOperation),
+        F: FnMut(PortIndex<P>, PortOperation<P>),
     {
         let node_meta = self.node_meta_valid(node).expect("Node must be valid");
         let new_meta = NodeMeta::try_new(
@@ -341,7 +341,7 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
     }
 
     /// Returns the range of outgoing port indices for a given node.
-    pub(crate) fn node_outgoing_ports(&self, node: NodeIndex) -> Range<usize> {
+    pub(crate) fn node_outgoing_ports(&self, node: NodeIndex<N>) -> Range<usize> {
         match self.node_meta_valid(node) {
             Some(node_meta) => node_meta.outgoing_ports(),
             None => 0..0,
@@ -349,20 +349,22 @@ impl<PO: Unsigned> PortGraph<u32, u32, PO> {
     }
 }
 
-impl<PO: Unsigned> PortView for PortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> PortView for PortGraph<N, P, PO> {
+    type NodeIndexBase = N;
+    type PortIndexBase = P;
     type PortOffsetBase = PO;
 
     #[inline]
-    fn port_direction(&self, port: impl Into<PortIndex>) -> Option<Direction> {
+    fn port_direction(&self, port: impl Into<PortIndex<P>>) -> Option<Direction> {
         self.port_meta_valid(port.into()).map(|pm| pm.direction)
     }
 
     #[inline]
-    fn port_node(&self, port: impl Into<PortIndex>) -> Option<NodeIndex> {
+    fn port_node(&self, port: impl Into<PortIndex<P>>) -> Option<NodeIndex<N>> {
         self.port_meta_valid(port.into()).map(|pm| pm.node)
     }
 
-    fn port_offset(&self, port: impl Into<PortIndex>) -> Option<PortOffset<PO>> {
+    fn port_offset(&self, port: impl Into<PortIndex<P>>) -> Option<PortOffset<PO>> {
         let port = port.into();
         let port_meta = self.port_meta_valid(port)?;
 
@@ -381,7 +383,7 @@ impl<PO: Unsigned> PortView for PortGraph<u32, u32, PO> {
         }
     }
 
-    fn port_index(&self, node: NodeIndex, offset: PortOffset<PO>) -> Option<PortIndex> {
+    fn port_index(&self, node: NodeIndex<N>, offset: PortOffset<PO>) -> Option<PortIndex<P>> {
         let node_meta = self.node_meta_valid(node)?;
         let direction = offset.direction();
         let offset = offset.index();
@@ -389,16 +391,16 @@ impl<PO: Unsigned> PortView for PortGraph<u32, u32, PO> {
     }
 
     #[inline]
-    fn input(&self, node: NodeIndex, offset: usize) -> Option<PortIndex> {
+    fn input(&self, node: NodeIndex<N>, offset: usize) -> Option<PortIndex<P>> {
         self.port_index(node, PortOffset::new_incoming(offset))
     }
 
     #[inline]
-    fn output(&self, node: NodeIndex, offset: usize) -> Option<PortIndex> {
+    fn output(&self, node: NodeIndex<N>, offset: usize) -> Option<PortIndex<P>> {
         self.port_index(node, PortOffset::new_outgoing(offset))
     }
 
-    fn num_ports(&self, node: NodeIndex, direction: Direction) -> usize {
+    fn num_ports(&self, node: NodeIndex<N>, direction: Direction) -> usize {
         let Some(node_meta) = self.node_meta_valid(node) else {
             return 0;
         };
@@ -410,12 +412,12 @@ impl<PO: Unsigned> PortView for PortGraph<u32, u32, PO> {
     }
 
     #[inline]
-    fn contains_node(&self, node: NodeIndex) -> bool {
+    fn contains_node(&self, node: NodeIndex<N>) -> bool {
         self.node_meta_valid(node).is_some()
     }
 
     #[inline]
-    fn contains_port(&self, port: PortIndex) -> bool {
+    fn contains_port(&self, port: PortIndex<P>) -> bool {
         self.port_meta_valid(port).is_some()
     }
 
@@ -445,30 +447,30 @@ impl<PO: Unsigned> PortView for PortGraph<u32, u32, PO> {
     }
 
     #[inline]
-    fn node_port_capacity(&self, node: NodeIndex) -> usize {
+    fn node_port_capacity(&self, node: NodeIndex<N>) -> usize {
         self.node_meta_valid(node)
             .map_or(0, |node_meta| node_meta.capacity())
     }
     delegate! {
         to self {
             #[call(_ports)]
-            fn ports(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortIndex> + Clone;
+            fn ports(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = PortIndex<P>> + Clone;
             #[call(_all_ports)]
-            fn all_ports(&self, node: NodeIndex) -> impl Iterator<Item = PortIndex> + Clone;
+            fn all_ports(&self, node: NodeIndex<N>) -> impl Iterator<Item = PortIndex<P>> + Clone;
             #[call(_port_offsets)]
-            fn port_offsets(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortOffset<PO>> + Clone;
+            fn port_offsets(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = PortOffset<PO>> + Clone;
             #[call(_all_port_offsets)]
-            fn all_port_offsets(&self, node: NodeIndex) -> impl Iterator<Item = PortOffset<PO>> + Clone;
+            fn all_port_offsets(&self, node: NodeIndex<N>) -> impl Iterator<Item = PortOffset<PO>> + Clone;
             #[call(_nodes_iter)]
-            fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex> + Clone;
+            fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex<N>> + Clone;
             #[call(_ports_iter)]
-            fn ports_iter(&self) -> impl Iterator<Item = PortIndex> + Clone;
+            fn ports_iter(&self) -> impl Iterator<Item = PortIndex<P>> + Clone;
         }
     }
 }
 
-impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
-    fn add_node(&mut self, incoming: usize, outgoing: usize) -> NodeIndex {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> PortMut for PortGraph<N, P, PO> {
+    fn add_node(&mut self, incoming: usize, outgoing: usize) -> NodeIndex<N> {
         assert!(
             incoming <= PortOffset::<PO>::max_offset(),
             "Incoming port count exceeds maximum."
@@ -488,7 +490,7 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
         node
     }
 
-    fn remove_node(&mut self, node: NodeIndex) {
+    fn remove_node(&mut self, node: NodeIndex<N>) {
         let Some(node_meta) = self.node_meta.get(node.index()).copied() else {
             return;
         };
@@ -530,16 +532,21 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
         self.port_link.reserve(ports);
     }
 
-    fn set_num_ports<F>(&mut self, node: NodeIndex, incoming: usize, outgoing: usize, mut rekey: F)
-    where
-        F: FnMut(PortIndex, PortOperation),
+    fn set_num_ports<F>(
+        &mut self,
+        node: NodeIndex<N>,
+        incoming: usize,
+        outgoing: usize,
+        mut rekey: F,
+    ) where
+        F: FnMut(PortIndex<P>, PortOperation<P>),
     {
         assert!(
-            incoming <= NodeMeta::<u32, PO>::MAX_INCOMING,
+            incoming <= NodeMeta::<P, PO>::MAX_INCOMING,
             "Incoming port count exceeds maximum."
         );
         assert!(
-            outgoing <= NodeMeta::<u32, PO>::MAX_OUTGOING,
+            outgoing <= NodeMeta::<P, PO>::MAX_OUTGOING,
             "Outgoing port count exceeds maximum."
         );
 
@@ -602,7 +609,7 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
 
     fn compact_nodes<F>(&mut self, mut rekey: F)
     where
-        F: FnMut(NodeIndex, NodeIndex),
+        F: FnMut(NodeIndex<N>, NodeIndex<N>),
     {
         let mut old_index = 0;
         let mut new_index = 0;
@@ -631,12 +638,12 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
         self.node_free = None.into();
     }
 
-    fn swap_nodes(&mut self, a: NodeIndex, b: NodeIndex) {
+    fn swap_nodes(&mut self, a: NodeIndex<N>, b: NodeIndex<N>) {
         let meta_a = self.node_meta[a.index()];
         let meta_b = self.node_meta[b.index()];
         self.node_meta.swap(a.index(), b.index());
         // Update the node indices in the ports metadata.
-        let mut update_ports = |new_node: NodeIndex, entry: NodeEntry<u32, PO>| {
+        let mut update_ports = |new_node: NodeIndex<N>, entry: NodeEntry<N, P, PO>| {
             let NodeEntry::Node(node_meta) = entry else {
                 return;
             };
@@ -650,7 +657,7 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
         update_ports(b, meta_a);
         // Update the free node linked list, only if we swapping empty and
         // non-empty spaces.
-        let mut update_free_list = |new_node: NodeIndex, entry: FreeNodeEntry| {
+        let mut update_free_list = |new_node: NodeIndex<N>, entry: FreeNodeEntry<N>| {
             if let Some(prev) = entry.prev.to_option() {
                 self.node_meta[prev.index()].free_entry_mut().unwrap().next = new_node.into();
             }
@@ -667,7 +674,7 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
 
     fn compact_ports<F>(&mut self, mut rekey: F)
     where
-        F: FnMut(PortIndex, PortIndex),
+        F: FnMut(PortIndex<P>, PortIndex<P>),
     {
         // Compact the links vector, ignoring free ports.
         let mut new_index = 0;
@@ -696,8 +703,8 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
         let mut new_index = 0;
         let mut old_index = 0;
         self.port_meta.retain(|port_meta| {
-            let old_port = PortIndex::new(old_index);
-            let new_port = PortIndex::new(new_index);
+            let old_port = PortIndex::<P>::new(old_index);
+            let new_port = PortIndex::<P>::new(new_index);
 
             let Some(port_meta) = port_meta.as_meta() else {
                 old_index += 1;
@@ -713,7 +720,7 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
                 // Update the node's port list, and reduce the capacity to match
                 // the number of ports.
                 *node_entry = NodeEntry::Node(
-                    NodeMeta::<u32, PO>::try_new(
+                    NodeMeta::<P, PO>::try_new(
                         new_port,
                         PO::from_usize(node_meta.incoming())
                             .expect("incoming port count exceeds maximum"),
@@ -743,10 +750,13 @@ impl<PO: Unsigned> PortMut for PortGraph<u32, u32, PO> {
     }
 }
 
-impl<PO: Unsigned> LinkView for PortGraph<u32, u32, PO> {
-    type LinkEndpoint = PortIndex;
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> LinkView for PortGraph<N, P, PO> {
+    type LinkEndpoint = PortIndex<P>;
 
-    fn port_links(&self, port: PortIndex) -> impl Iterator<Item = (PortIndex, PortIndex)> + Clone {
+    fn port_links(
+        &self,
+        port: PortIndex<P>,
+    ) -> impl Iterator<Item = (PortIndex<P>, PortIndex<P>)> + Clone {
         self.port_meta_valid(port).unwrap();
         self.port_link[port.index()]
             .to_option()
@@ -762,25 +772,25 @@ impl<PO: Unsigned> LinkView for PortGraph<u32, u32, PO> {
     delegate! {
         to self {
             #[call(_get_connections)]
-            fn get_connections(&self, from: NodeIndex, to: NodeIndex) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn get_connections(&self, from: NodeIndex<N>, to: NodeIndex<N>) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
             #[call(_links)]
-            fn links(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn links(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
             #[call(_all_links)]
-            fn all_links(&self, node: NodeIndex) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
+            fn all_links(&self, node: NodeIndex<N>) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
             #[call(_neighbours)]
-            fn neighbours(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = NodeIndex> + Clone;
+            fn neighbours(&self, node: NodeIndex<N>, direction: Direction) -> impl Iterator<Item = NodeIndex<N>> + Clone;
             #[call(_all_neighbours)]
-            fn all_neighbours(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + Clone;
+            fn all_neighbours(&self, node: NodeIndex<N>) -> impl Iterator<Item = NodeIndex<N>> + Clone;
         }
     }
 }
 
-impl<PO: Unsigned> LinkMut for PortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> LinkMut for PortGraph<N, P, PO> {
     fn link_ports(
         &mut self,
-        port_a: PortIndex,
-        port_b: PortIndex,
-    ) -> Result<(Self::LinkEndpoint, Self::LinkEndpoint), LinkError<PO>> {
+        port_a: PortIndex<P>,
+        port_b: PortIndex<P>,
+    ) -> Result<(Self::LinkEndpoint, Self::LinkEndpoint), LinkError<N, P, PO>> {
         let Some(meta_a) = self.port_meta_valid(port_a) else {
             return Err(LinkError::UnknownPort { port: port_a });
         };
@@ -809,7 +819,7 @@ impl<PO: Unsigned> LinkMut for PortGraph<u32, u32, PO> {
         Ok((port_a, port_b))
     }
 
-    fn unlink_port(&mut self, port: PortIndex) -> Option<PortIndex> {
+    fn unlink_port(&mut self, port: PortIndex<P>) -> Option<PortIndex<P>> {
         self.port_meta_valid(port)?;
         let linked = self.port_link[port.index()].take().to_option()?;
         self.port_link[linked.index()] = None.into();
@@ -818,13 +828,13 @@ impl<PO: Unsigned> LinkMut for PortGraph<u32, u32, PO> {
     }
 }
 
-impl<N: Unsigned, P: Unsigned, PO: Unsigned> Default for PortGraph<N, P, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> Default for PortGraph<N, P, PO> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<PO: Unsigned> std::fmt::Debug for PortGraph<u32, u32, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for PortGraph<N, P, PO> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PortGraph")
             .field("nodes", &debug::NodesDebug(self))
@@ -835,9 +845,11 @@ impl<PO: Unsigned> std::fmt::Debug for PortGraph<u32, u32, PO> {
 
 mod debug {
     use super::*;
-    pub struct NodesDebug<'a, PO: Unsigned>(pub &'a PortGraph<u32, u32, PO>);
+    pub struct NodesDebug<'a, N: IndexBase, P: IndexBase, PO: IndexBase>(
+        pub &'a PortGraph<N, P, PO>,
+    );
 
-    impl<PO: Unsigned> std::fmt::Debug for NodesDebug<'_, PO> {
+    impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for NodesDebug<'_, N, P, PO> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             f.debug_map()
                 .entries(
@@ -849,9 +861,12 @@ mod debug {
         }
     }
 
-    pub struct NodeDebug<'a, PO: Unsigned>(pub &'a PortGraph<u32, u32, PO>, pub NodeIndex);
+    pub struct NodeDebug<'a, N: IndexBase, P: IndexBase, PO: IndexBase>(
+        pub &'a PortGraph<N, P, PO>,
+        pub NodeIndex<N>,
+    );
 
-    impl<PO: Unsigned> std::fmt::Debug for NodeDebug<'_, PO> {
+    impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for NodeDebug<'_, N, P, PO> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let inputs = PortRangeDebug(self.0._inputs(self.1).as_range());
             let outputs = PortRangeDebug(self.0._outputs(self.1).as_range());
@@ -882,9 +897,11 @@ mod debug {
         }
     }
 
-    pub struct PortsDebug<'a, PO: Unsigned>(pub &'a PortGraph<u32, u32, PO>);
+    pub struct PortsDebug<'a, N: IndexBase, P: IndexBase, PO: IndexBase>(
+        pub &'a PortGraph<N, P, PO>,
+    );
 
-    impl<PO: Unsigned> std::fmt::Debug for PortsDebug<'_, PO> {
+    impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for PortsDebug<'_, N, P, PO> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             f.debug_map()
                 .entries(
@@ -896,9 +913,12 @@ mod debug {
         }
     }
 
-    pub struct PortDebug<'a, PO: Unsigned>(pub &'a PortGraph<u32, u32, PO>, pub PortIndex);
+    pub struct PortDebug<'a, N: IndexBase, P: IndexBase, PO: IndexBase>(
+        pub &'a PortGraph<N, P, PO>,
+        pub PortIndex<P>,
+    );
 
-    impl<PO: Unsigned> std::fmt::Debug for PortDebug<'_, PO> {
+    impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for PortDebug<'_, N, P, PO> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let direction = self.0.port_direction(self.1).unwrap();
             let link = self.0.port_link(self.1);
@@ -920,53 +940,53 @@ mod debug {
 /// Error generated when linking ports.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 #[allow(missing_docs)]
-pub enum LinkError<PO: Unsigned> {
+pub enum LinkError<N: IndexBase = u32, P: IndexBase = u32, PO: IndexBase = u16> {
     /// The port is already linked.
     #[error("port {port:?} is already linked")]
-    AlreadyLinked { port: PortIndex },
+    AlreadyLinked { port: PortIndex<P> },
     /// The port does not exist.
     #[error("unknown port '{port:?}''")]
-    UnknownPort { port: PortIndex },
+    UnknownPort { port: PortIndex<P> },
     /// The port offset is invalid.
     #[error("unknown port offset {} in node {node:?} in direction {:?}", offset.index(), offset.direction())]
     UnknownOffset {
-        node: NodeIndex,
+        node: NodeIndex<N>,
         offset: PortOffset<PO>,
     },
     /// The ports have the same direction so they cannot be linked.
     #[error("Cannot link two ports with direction {dir:?}. In ports {port_a:?} and {port_b:?}")]
     IncompatibleDirections {
-        port_a: PortIndex,
-        port_b: PortIndex,
+        port_a: PortIndex<P>,
+        port_b: PortIndex<P>,
         dir: Direction,
     },
 }
 
 #[cfg(feature = "pyo3")]
-impl<PO: Unsigned> From<LinkError<PO>> for PyErr {
-    fn from(s: LinkError<PO>) -> Self {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> From<LinkError<N, P, PO>> for PyErr {
+    fn from(s: LinkError<N, P, PO>) -> Self {
         pyo3::exceptions::PyRuntimeError::new_err(s.to_string())
     }
 }
 
 /// Operations applied to a port, used by the callback in [`PortGraph::set_num_ports`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PortOperation {
+pub enum PortOperation<P: IndexBase = u32> {
     /// The port was moved to a new position.
     Moved {
         /// New index for the port
-        new_index: PortIndex,
+        new_index: PortIndex<P>,
     },
     /// The port was removed.
     Removed {
         /// The old link from the port, if any.
-        old_link: Option<PortIndex>,
+        old_link: Option<PortIndex<P>>,
     },
 }
 
-impl PortOperation {
+impl<P: IndexBase> PortOperation<P> {
     /// Return the new index of the port, if it was moved
-    pub fn new_index(&self) -> Option<PortIndex> {
+    pub fn new_index(&self) -> Option<PortIndex<P>> {
         match self {
             PortOperation::Moved { new_index } => Some(*new_index),
             _ => None,
@@ -986,6 +1006,8 @@ pub(crate) mod test {
     use std::collections::HashMap;
 
     use super::*;
+    use crate::NodeIndex;
+    use crate::PortIndex;
 
     #[test]
     fn create_graph() {

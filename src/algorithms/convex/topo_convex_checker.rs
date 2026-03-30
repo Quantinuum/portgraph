@@ -1,17 +1,20 @@
 use std::collections::BTreeSet;
 
 use crate::algorithms::{toposort, TopoSort};
-use crate::{Direction, LinkView, NodeIndex, PortIndex, SecondaryMap, UnmanagedDenseMap};
+use crate::{Direction, LinkView, NodeIndex, PortIndex, PortView, SecondaryMap, UnmanagedDenseMap};
 
 use super::{ConvexChecker, CreateConvexChecker};
 
 /// Convexity checking using a pre-computed topological node order.
-pub struct TopoConvexChecker<G> {
+pub struct TopoConvexChecker<G>
+where
+    G: PortView,
+{
     graph: G,
     // The nodes in topological order
-    topsort_nodes: Vec<NodeIndex>,
+    topsort_nodes: Vec<NodeIndex<G::NodeIndexBase>>,
     // The index of a node in the topological order (the inverse of topsort_nodes)
-    topsort_ind: UnmanagedDenseMap<NodeIndex, usize>,
+    topsort_ind: UnmanagedDenseMap<NodeIndex<G::NodeIndexBase>, usize>,
 }
 
 impl<G: LinkView> TopoConvexChecker<G> {
@@ -62,7 +65,10 @@ impl<G: LinkView> TopoConvexChecker<G> {
     /// that are in the interval between the first and last node of the subgraph
     /// in some topological order. In the worst case this will traverse every
     /// node in the graph and can be improved on in the future.
-    pub fn is_node_convex(&self, nodes: impl IntoIterator<Item = NodeIndex>) -> bool {
+    pub fn is_node_convex(
+        &self,
+        nodes: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
+    ) -> bool {
         // The nodes in the subgraph, in topological order.
         let nodes: BTreeSet<_> = nodes.into_iter().map(|n| self.topsort_ind[n]).collect();
         if nodes.len() <= 1 {
@@ -121,11 +127,14 @@ impl<G: LinkView> TopoConvexChecker<G> {
 }
 
 impl<G: LinkView> ConvexChecker for TopoConvexChecker<G> {
+    type NodeIndexBase = G::NodeIndexBase;
+    type PortIndexBase = G::PortIndexBase;
+
     fn is_convex(
         &self,
-        nodes: impl IntoIterator<Item = NodeIndex>,
-        inputs: impl IntoIterator<Item = PortIndex>,
-        outputs: impl IntoIterator<Item = PortIndex>,
+        nodes: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
+        inputs: impl IntoIterator<Item = PortIndex<G::PortIndexBase>>,
+        outputs: impl IntoIterator<Item = PortIndex<G::PortIndexBase>>,
     ) -> bool {
         let pre_outputs: BTreeSet<_> = outputs
             .into_iter()

@@ -1,11 +1,11 @@
 //! Internal data structures for port storage.
 
-use crate::index::{BitField, Unsigned};
+use crate::index::{BitField, IndexBase};
 use crate::{Direction, NodeIndex};
 
 /// Meta data stored for a port, which might be free.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct PortEntry<N: Unsigned>(
+pub(super) struct PortEntry<N: IndexBase>(
     /// A bitfield containing either:
     ///
     /// - A free port marker.
@@ -18,7 +18,7 @@ pub(super) struct PortEntry<N: Unsigned>(
     BitField<N>,
 );
 
-impl<N: Unsigned> PortEntry<N> {
+impl<N: IndexBase> PortEntry<N> {
     /// Create a new free port entry with the given next free port index.
     #[inline]
     pub fn new_free() -> Self {
@@ -66,7 +66,7 @@ impl<N: Unsigned> PortEntry<N> {
 /// # Generic parameters
 /// - `N`: The unsigned integer type used for node indices.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct PortMeta<N: Unsigned> {
+pub(super) struct PortMeta<N: IndexBase> {
     /// The node index where this port is located
     pub node: NodeIndex<N>,
     /// The direction of this port
@@ -82,23 +82,23 @@ pub(super) struct PortMeta<N: Unsigned> {
 #[cfg(feature = "serde")]
 mod port_meta_serialization {
     use super::PortEntry;
-    use crate::index::Unsigned;
+    use crate::index::IndexBase;
     use crate::{Direction, NodeIndex};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     /// Returns a bit mask for the direction bit, which is the leftmost bit of
     /// the integer type `N`.
-    fn direction_mask<N: Unsigned>() -> N {
+    fn direction_mask<N: IndexBase>() -> N {
         !node_mask::<N>()
     }
 
     /// Returns a bit mask for the node index bits, which are all bits except
     /// the leftmost bit of the integer type `N`.
-    fn node_mask<N: Unsigned>() -> N {
+    fn node_mask<N: IndexBase>() -> N {
         N::max_value() >> 1
     }
 
-    impl<N: Unsigned + Serialize> Serialize for PortEntry<N> {
+    impl<N: IndexBase + Serialize> Serialize for PortEntry<N> {
         fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
             let mut bits: N = N::zero();
             if let Some(meta) = self.as_meta() {
@@ -113,7 +113,7 @@ mod port_meta_serialization {
         }
     }
 
-    impl<'de, N: Unsigned + Deserialize<'de>> Deserialize<'de> for PortEntry<N> {
+    impl<'de, N: IndexBase + Deserialize<'de>> Deserialize<'de> for PortEntry<N> {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
             let bits = N::deserialize(deserializer)?;
             let direction_bit = bits & direction_mask::<N>();

@@ -29,6 +29,8 @@
 //! use ::portgraph::*;
 //! use ::portgraph::algorithms::{toposort, TopoSort};
 //!
+//! type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
+//!
 //! // Create a graph with two nodes, each with two input and two output ports
 //! let mut graph: PortGraph = PortGraph::new();
 //! let node_a = graph.add_node(2, 2);

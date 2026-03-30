@@ -16,6 +16,9 @@
 //!
 //! ```
 //! # use ::portgraph::*;
+//! # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
+//! # type NodeIndex = ::portgraph::NodeIndex<u32>;
+//! # type PortIndex = ::portgraph::PortIndex<u32>;
 //!
 //! let mut graph: PortGraph = PortGraph::new();
 //! let mut node_weights = UnmanagedDenseMap::<NodeIndex, usize>::new();

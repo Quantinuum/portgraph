@@ -3,7 +3,7 @@
 use std::ops::Range;
 use thiserror::Error;
 
-use crate::index::{MaybeNodeIndex, Unsigned};
+use crate::index::{IndexBase, MaybeNodeIndex};
 use crate::{Direction, PortIndex};
 
 #[cfg(feature = "serde")]
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 /// - `P`: The unsigned integer type used for port indices.
 /// - `PO`: The unsigned integer type used for port offsets and capacities.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct NodeMeta<P: Unsigned, PO: Unsigned> {
+pub(super) struct NodeMeta<P: IndexBase, PO: IndexBase> {
     /// The index of the first port in the port list.
     /// If the node has no ports, this will point to the index 0.
     first_port: PortIndex<P>,
@@ -32,7 +32,7 @@ pub(super) struct NodeMeta<P: Unsigned, PO: Unsigned> {
     capacity: PO,
 }
 
-impl<P: Unsigned, PO: Unsigned> NodeMeta<P, PO> {
+impl<P: IndexBase, PO: IndexBase> NodeMeta<P, PO> {
     /// The maximum number of incoming ports for a node.
     /// This is restricted by the `NonZeroU16` representation.
     pub(super) const MAX_INCOMING: usize = u16::MAX as usize - 1;
@@ -156,7 +156,7 @@ impl<P: Unsigned, PO: Unsigned> NodeMeta<P, PO> {
     }
 }
 
-impl<P: Unsigned, PO: Unsigned> Default for NodeMeta<P, PO> {
+impl<P: IndexBase, PO: IndexBase> Default for NodeMeta<P, PO> {
     fn default() -> Self {
         Self::try_new(PortIndex::default(), PO::zero(), PO::zero(), PO::zero()).unwrap()
     }
@@ -179,15 +179,16 @@ pub(crate) enum NodeMetaError {
 /// Meta data stored for a node, which might be free.
 ///
 /// # Generic parameters
+/// - `N`: The unsigned integer type used for node indices.
 /// - `P`: The unsigned integer type used for port indices.
 /// - `PO`: The unsigned integer type used for port offsets and capacities.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-pub(super) enum NodeEntry<P: Unsigned, PO: Unsigned> {
+pub(super) enum NodeEntry<N: IndexBase, P: IndexBase, PO: IndexBase> {
     /// No node is stored at this entry.
     /// Instead the entry forms a doubly-linked list of free nodes.
     #[cfg_attr(feature = "serde", serde(rename = "f",))]
-    Free(FreeNodeEntry),
+    Free(FreeNodeEntry<N>),
     /// A node is stored at this entry.
     ///
     /// This value allows for null-value optimization so that
@@ -196,10 +197,10 @@ pub(super) enum NodeEntry<P: Unsigned, PO: Unsigned> {
     Node(NodeMeta<P, PO>),
 }
 
-impl<P: Unsigned, PO: Unsigned> NodeEntry<P, PO> {
+impl<N: IndexBase, P: IndexBase, PO: IndexBase> NodeEntry<N, P, PO> {
     /// Returns the free node list entry.
     #[inline]
-    pub fn free_entry(&self) -> Option<&FreeNodeEntry> {
+    pub fn free_entry(&self) -> Option<&FreeNodeEntry<N>> {
         match self {
             NodeEntry::Free(entry) => Some(entry),
             NodeEntry::Node(_) => None,
@@ -208,7 +209,7 @@ impl<P: Unsigned, PO: Unsigned> NodeEntry<P, PO> {
 
     /// Returns the free node list entry.
     #[inline]
-    pub fn free_entry_mut(&mut self) -> Option<&mut FreeNodeEntry> {
+    pub fn free_entry_mut(&mut self) -> Option<&mut FreeNodeEntry<N>> {
         match self {
             NodeEntry::Free(entry) => Some(entry),
             NodeEntry::Node(_) => None,
@@ -218,8 +219,8 @@ impl<P: Unsigned, PO: Unsigned> NodeEntry<P, PO> {
     /// Create a new free node entry
     #[inline]
     pub fn new_free(
-        prev: impl Into<MaybeNodeIndex<u32>>,
-        next: impl Into<MaybeNodeIndex<u32>>,
+        prev: impl Into<MaybeNodeIndex<N>>,
+        next: impl Into<MaybeNodeIndex<N>>,
     ) -> Self {
         NodeEntry::Free(FreeNodeEntry {
             prev: prev.into(),
@@ -231,13 +232,25 @@ impl<P: Unsigned, PO: Unsigned> NodeEntry<P, PO> {
 /// Metadata for a free node space.
 ///
 /// The entry forms a doubly-linked list of free nodes.
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+///
+/// # Generic parameters
+/// - `N`: The unsigned integer type used for node indices.
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-pub(super) struct FreeNodeEntry {
+pub(super) struct FreeNodeEntry<N: IndexBase> {
     /// The previous free node.
-    pub(super) prev: MaybeNodeIndex<u32>,
+    pub(super) prev: MaybeNodeIndex<N>,
     /// The next free node.
-    pub(super) next: MaybeNodeIndex<u32>,
+    pub(super) next: MaybeNodeIndex<N>,
+}
+
+impl<N: IndexBase> Default for FreeNodeEntry<N> {
+    fn default() -> Self {
+        Self {
+            prev: None.into(),
+            next: None.into(),
+        }
+    }
 }
 
 /* --------------------- Serde implementation for NodeMeta, avoiding a bound on PO::NonZero */
@@ -245,8 +258,8 @@ pub(super) struct FreeNodeEntry {
 #[cfg(feature = "serde")]
 impl<P, PO> serde::Serialize for NodeMeta<P, PO>
 where
-    P: Unsigned + serde::Serialize,
-    PO: Unsigned + serde::Serialize,
+    P: IndexBase + serde::Serialize,
+    PO: IndexBase + serde::Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -265,8 +278,8 @@ where
 #[cfg(feature = "serde")]
 impl<'de, P, PO> serde::Deserialize<'de> for NodeMeta<P, PO>
 where
-    P: Unsigned + serde::Deserialize<'de>,
-    PO: Unsigned + serde::Deserialize<'de>,
+    P: IndexBase + serde::Deserialize<'de>,
+    PO: IndexBase + serde::Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -313,12 +326,12 @@ where
             }
         }
 
-        struct NodeMetaVisitor<P: Unsigned, PO: Unsigned>(PhantomData<(P, PO)>);
+        struct NodeMetaVisitor<P: IndexBase, PO: IndexBase>(PhantomData<(P, PO)>);
 
         impl<'de, P, PO> Visitor<'de> for NodeMetaVisitor<P, PO>
         where
-            P: Unsigned + serde::Deserialize<'de>,
-            PO: Unsigned + serde::Deserialize<'de>,
+            P: IndexBase + serde::Deserialize<'de>,
+            PO: IndexBase + serde::Deserialize<'de>,
         {
             type Value = NodeMeta<P, PO>;
 

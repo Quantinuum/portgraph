@@ -1,5 +1,5 @@
 use criterion::{criterion_group, Criterion};
-use portgraph::{algorithms, Direction, NodeIndex, PortGraph};
+use portgraph::{algorithms, Direction};
 
 use crate::helpers::*;
 

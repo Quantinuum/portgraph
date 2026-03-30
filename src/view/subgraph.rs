@@ -51,16 +51,19 @@ use crate::{
 /// If any graph method is called with a node or port that is not in the subgraph,
 /// the behaviour is unspecified.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Subgraph<G> {
+pub struct Subgraph<G: PortView> {
     /// The base graph.
     graph: G,
     /// All the nodes included in the subgraph.
-    nodes: BTreeSet<NodeIndex>,
+    nodes: BTreeSet<NodeIndex<G::NodeIndexBase>>,
     /// The ordered list of incoming and outgoing ports in the boundary.
-    boundary: Boundary,
+    boundary: Boundary<G::PortIndexBase>,
 }
 
-impl<G: LinkView> Subgraph<G> {
+impl<G> Subgraph<G>
+where
+    G: LinkView,
+{
     /// Create a new subgraph view of `graph`.
     ///
     /// ### Arguments
@@ -77,7 +80,7 @@ impl<G: LinkView> Subgraph<G> {
     /// (Specifically, where the boundary includes at least one edge, or disconnected
     /// port. To create a subgraph containing the whole of a component without any
     /// disconnected ports, use [`Self::with_nodes`].)
-    pub fn new_subgraph(graph: G, boundary: Boundary) -> Self {
+    pub fn new_subgraph(graph: G, boundary: Boundary<G::PortIndexBase>) -> Self {
         let nodes = boundary.internal_nodes(&graph).collect();
         Self {
             graph,
@@ -92,7 +95,10 @@ impl<G: LinkView> Subgraph<G> {
     /// that have edges to other (i.e. external) nodes, in the order `nodes` are given.
     ///
     /// See [`Subgraph::new_subgraph`] for a method that takes an explicit port boundary.
-    pub fn with_nodes(graph: G, nodes: impl IntoIterator<Item = NodeIndex>) -> Self {
+    pub fn with_nodes(
+        graph: G,
+        nodes: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
+    ) -> Self {
         let ordered_nodes = nodes.into_iter().collect_vec();
         let nodes = ordered_nodes.iter().copied().collect();
         let boundary = collect_boundary_ports(&graph, ordered_nodes, &nodes);
@@ -115,7 +121,10 @@ impl<G: LinkView> Subgraph<G> {
 
     /// Whether the subgraph is convex, using a pre-existing checker.
     #[inline]
-    pub fn is_convex_with_checker(&self, checker: &impl ConvexChecker) -> bool {
+    pub fn is_convex_with_checker(
+        &self,
+        checker: &impl ConvexChecker<NodeIndexBase = G::NodeIndexBase, PortIndexBase = G::PortIndexBase>,
+    ) -> bool {
         if self.node_count() <= 1 {
             return true;
         }
@@ -142,15 +151,18 @@ impl<G: LinkView> Subgraph<G> {
 /// Collect all the boundary input and output ports of a set of nodes.
 ///
 /// Ports that connect nodes in the set are not included.
-fn collect_boundary_ports<G: LinkView>(
+fn collect_boundary_ports<G>(
     graph: &G,
-    ordered_nodes: impl IntoIterator<Item = NodeIndex>,
-    node_set: &BTreeSet<NodeIndex>,
-) -> Boundary {
+    ordered_nodes: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
+    node_set: &BTreeSet<NodeIndex<G::NodeIndexBase>>,
+) -> Boundary<G::PortIndexBase>
+where
+    G: LinkView,
+{
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
 
-    let has_external_link = |p: &PortIndex| -> bool {
+    let has_external_link = |p: &PortIndex<G::PortIndexBase>| -> bool {
         graph.port_links(*p).any(|(_, lnk)| {
             let neighbour = graph.port_node(lnk).expect("Linked port belongs to a node");
             !node_set.contains(&neighbour)
@@ -169,16 +181,21 @@ fn collect_boundary_ports<G: LinkView>(
     Boundary::new(inputs, outputs)
 }
 
-impl<G: PortView> PortView for Subgraph<G> {
+impl<G> PortView for Subgraph<G>
+where
+    G: PortView,
+{
+    type NodeIndexBase = G::NodeIndexBase;
+    type PortIndexBase = G::PortIndexBase;
     type PortOffsetBase = G::PortOffsetBase;
 
     #[inline(always)]
-    fn contains_node(&'_ self, node: NodeIndex) -> bool {
+    fn contains_node(&'_ self, node: NodeIndex<Self::NodeIndexBase>) -> bool {
         self.nodes.contains(&node)
     }
 
     #[inline(always)]
-    fn contains_port(&self, port: PortIndex) -> bool {
+    fn contains_port(&self, port: PortIndex<Self::PortIndexBase>) -> bool {
         let Some(node) = self.graph.port_node(port) else {
             return false;
         };
@@ -201,12 +218,12 @@ impl<G: PortView> PortView for Subgraph<G> {
     }
 
     #[inline]
-    fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex> + Clone {
+    fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex<Self::NodeIndexBase>> + Clone {
         self.nodes.iter().copied()
     }
 
     #[inline]
-    fn ports_iter(&self) -> impl Iterator<Item = PortIndex> + Clone {
+    fn ports_iter(&self) -> impl Iterator<Item = PortIndex<Self::PortIndexBase>> + Clone {
         self.nodes.iter().flat_map(|&n| self.graph.all_ports(n))
     }
 
@@ -222,29 +239,32 @@ impl<G: PortView> PortView for Subgraph<G> {
 
     delegate! {
         to self.graph {
-            fn port_direction(&self, port: impl Into<PortIndex>) -> Option<Direction>;
-            fn port_node(&self, port: impl Into<PortIndex>) -> Option<NodeIndex>;
-            fn port_offset(&self, port: impl Into<PortIndex>) -> Option<PortOffset<Self::PortOffsetBase>>;
-            fn port_index(&self, node: NodeIndex, offset: PortOffset<Self::PortOffsetBase>) -> Option<PortIndex>;
-            fn ports(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortIndex> + Clone;
-            fn all_ports(&self, node: NodeIndex) -> impl Iterator<Item = PortIndex> + Clone;
-            fn input(&self, node: NodeIndex, offset: usize) -> Option<PortIndex>;
-            fn output(&self, node: NodeIndex, offset: usize) -> Option<PortIndex>;
-            fn num_ports(&self, node: NodeIndex, direction: Direction) -> usize;
-            fn port_offsets(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = PortOffset<Self::PortOffsetBase>> + Clone;
-            fn all_port_offsets(&self, node: NodeIndex) -> impl Iterator<Item = PortOffset<Self::PortOffsetBase>> + Clone;
-            fn node_port_capacity(&self, node: NodeIndex) -> usize;
+            fn port_direction(&self, port: impl Into<PortIndex<Self::PortIndexBase>>) -> Option<Direction>;
+            fn port_node(&self, port: impl Into<PortIndex<Self::PortIndexBase>>) -> Option<NodeIndex<Self::NodeIndexBase>>;
+            fn port_offset(&self, port: impl Into<PortIndex<Self::PortIndexBase>>) -> Option<PortOffset<Self::PortOffsetBase>>;
+            fn port_index(&self, node: NodeIndex<Self::NodeIndexBase>, offset: PortOffset<Self::PortOffsetBase>) -> Option<PortIndex<Self::PortIndexBase>>;
+            fn ports(&self, node: NodeIndex<Self::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = PortIndex<Self::PortIndexBase>> + Clone;
+            fn all_ports(&self, node: NodeIndex<Self::NodeIndexBase>) -> impl Iterator<Item = PortIndex<Self::PortIndexBase>> + Clone;
+            fn input(&self, node: NodeIndex<Self::NodeIndexBase>, offset: usize) -> Option<PortIndex<Self::PortIndexBase>>;
+            fn output(&self, node: NodeIndex<Self::NodeIndexBase>, offset: usize) -> Option<PortIndex<Self::PortIndexBase>>;
+            fn num_ports(&self, node: NodeIndex<Self::NodeIndexBase>, direction: Direction) -> usize;
+            fn port_offsets(&self, node: NodeIndex<Self::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = PortOffset<Self::PortOffsetBase>> + Clone;
+            fn all_port_offsets(&self, node: NodeIndex<Self::NodeIndexBase>) -> impl Iterator<Item = PortOffset<Self::PortOffsetBase>> + Clone;
+            fn node_port_capacity(&self, node: NodeIndex<Self::NodeIndexBase>) -> usize;
         }
     }
 }
 
-impl<G: LinkView> LinkView for Subgraph<G> {
+impl<G> LinkView for Subgraph<G>
+where
+    G: LinkView,
+{
     type LinkEndpoint = G::LinkEndpoint;
 
     fn get_connections(
         &self,
-        from: NodeIndex,
-        to: NodeIndex,
+        from: NodeIndex<Self::NodeIndexBase>,
+        to: NodeIndex<Self::NodeIndexBase>,
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone {
         if self.nodes.contains(&from) && self.nodes.contains(&to) {
             Either::Left(self.graph.get_connections(from, to))
@@ -255,7 +275,7 @@ impl<G: LinkView> LinkView for Subgraph<G> {
 
     fn port_links(
         &self,
-        port: PortIndex,
+        port: PortIndex<Self::PortIndexBase>,
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone {
         self.graph
             .port_links(port)
@@ -264,7 +284,7 @@ impl<G: LinkView> LinkView for Subgraph<G> {
 
     fn links(
         &self,
-        node: NodeIndex,
+        node: NodeIndex<Self::NodeIndexBase>,
         direction: Direction,
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone {
         self.graph
@@ -274,7 +294,7 @@ impl<G: LinkView> LinkView for Subgraph<G> {
 
     fn all_links(
         &self,
-        node: NodeIndex,
+        node: NodeIndex<Self::NodeIndexBase>,
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone {
         self.graph
             .all_links(node)
@@ -283,15 +303,18 @@ impl<G: LinkView> LinkView for Subgraph<G> {
 
     fn neighbours(
         &self,
-        node: NodeIndex,
+        node: NodeIndex<Self::NodeIndexBase>,
         direction: Direction,
-    ) -> impl Iterator<Item = NodeIndex> + Clone {
+    ) -> impl Iterator<Item = NodeIndex<Self::NodeIndexBase>> + Clone {
         self.graph
             .neighbours(node, direction)
             .filter(|&n| self.contains_node(n))
     }
 
-    fn all_neighbours(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + Clone {
+    fn all_neighbours(
+        &self,
+        node: NodeIndex<Self::NodeIndexBase>,
+    ) -> impl Iterator<Item = NodeIndex<Self::NodeIndexBase>> + Clone {
         self.graph
             .all_neighbours(node)
             .filter(|&n| self.contains_node(n))
@@ -304,7 +327,10 @@ impl<G: LinkView> LinkView for Subgraph<G> {
     }
 }
 
-impl<G: MultiView> MultiView for Subgraph<G> {
+impl<G> MultiView for Subgraph<G>
+where
+    G: MultiView,
+{
     fn subport_link(&self, subport: Self::LinkEndpoint) -> Option<Self::LinkEndpoint> {
         self.graph
             .subport_link(subport)
@@ -313,8 +339,8 @@ impl<G: MultiView> MultiView for Subgraph<G> {
 
     delegate! {
         to self.graph {
-            fn subports(&self, node: NodeIndex, direction: Direction) -> impl Iterator<Item = Self::LinkEndpoint> + Clone;
-            fn all_subports(&self, node: NodeIndex) -> impl Iterator<Item = Self::LinkEndpoint> + Clone;
+            fn subports(&self, node: NodeIndex<Self::NodeIndexBase>, direction: Direction) -> impl Iterator<Item = Self::LinkEndpoint> + Clone;
+            fn all_subports(&self, node: NodeIndex<Self::NodeIndexBase>) -> impl Iterator<Item = Self::LinkEndpoint> + Clone;
         }
     }
 }
@@ -322,18 +348,21 @@ impl<G: MultiView> MultiView for Subgraph<G> {
 /// An error from [Subgraph::copy_in_parent]
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 #[non_exhaustive]
-pub enum CopySubgraphError {
+pub enum CopySubgraphError<P: crate::index::IndexBase = u32> {
     /// Tried to copy an edge crossing a subgraph boundary
     /// when the containing graph is not a [`MultiMut`](crate::MultiMut)
     #[error("Cannot copy edge between external port {external:?} and (copy of) internal port {internal:?}")]
     #[allow(missing_docs)]
     CantCopyBoundary {
-        internal: PortIndex,
-        external: PortIndex,
+        internal: PortIndex<P>,
+        external: PortIndex<P>,
     },
 }
 
-impl<G: LinkMut> Subgraph<G> {
+impl<G> Subgraph<G>
+where
+    G: LinkMut,
+{
     /// Copies all the nodes and edges in this subgraph into the parent graph.
     ///
     /// If there are any boundary edges, these will also be copied but keeping
@@ -352,7 +381,13 @@ impl<G: LinkMut> Subgraph<G> {
     ///   graph's nodes and edges will be unchanged, but capacity may have changed.
     ///
     /// [`MultiMut`]: crate::MultiMut
-    pub fn copy_in_parent(&mut self) -> Result<HashMap<NodeIndex, NodeIndex>, CopySubgraphError> {
+    #[allow(clippy::type_complexity)]
+    pub fn copy_in_parent(
+        &mut self,
+    ) -> Result<
+        HashMap<NodeIndex<G::NodeIndexBase>, NodeIndex<G::NodeIndexBase>>,
+        CopySubgraphError<G::PortIndexBase>,
+    > {
         self.graph.reserve(self.node_count(), self.port_count());
         let g = &mut self.graph;
         let node_map = self
@@ -402,8 +437,8 @@ impl<G: LinkMut> Subgraph<G> {
     }
 }
 
-impl<G> HasBoundary for Subgraph<G> {
-    fn port_boundary(&self) -> Cow<'_, Boundary> {
+impl<G: PortView> HasBoundary<G::PortIndexBase> for Subgraph<G> {
+    fn port_boundary(&self) -> Cow<'_, Boundary<G::PortIndexBase>> {
         Cow::Borrowed(&self.boundary)
     }
 }
@@ -415,10 +450,16 @@ mod tests {
     use itertools::Itertools;
     use rstest::rstest;
 
-    use crate::multiportgraph::SubportIndex;
-    use crate::{LinkMut, MultiPortGraph, PortGraph, PortMut, PortView};
+    use crate::LinkMut;
+    type SubportIndex = crate::multiportgraph::SubportIndex<u32>;
+    use crate::PortMut;
 
     use super::*;
+
+    type PortGraph = crate::PortGraph<u32, u32, u16>;
+    type MultiPortGraph = crate::MultiPortGraph<u32, u32, u16>;
+    type NodeIndex = crate::NodeIndex<u32>;
+    type PortIndex = crate::PortIndex<u32>;
 
     /// Create the following graph
     ///
@@ -802,11 +843,10 @@ mod tests {
         assert_same_for_nodes(&graph, &backup, backup.nodes_iter()); // Rest of graph unchanged
     }
 
-    fn assert_same_for_nodes<A: LinkView, B: LinkView>(
-        a: A,
-        b: B,
-        nodes: impl IntoIterator<Item = NodeIndex>,
-    ) where
+    fn assert_same_for_nodes<A, B>(a: A, b: B, nodes: impl IntoIterator<Item = NodeIndex>)
+    where
+        A: LinkView<NodeIndexBase = u32, PortIndexBase = u32>,
+        B: LinkView<NodeIndexBase = u32, PortIndexBase = u32>,
         PortIndex: From<A::LinkEndpoint> + From<B::LinkEndpoint>,
     {
         for node in nodes {

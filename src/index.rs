@@ -36,7 +36,7 @@ pub struct PortIndex<U = u32>(BitField<U>);
 // Wraps the BitField API for NodeIndex and PortIndex.
 macro_rules! index_impls {
     ($name:ident) => {
-        impl<U: Unsigned> $name<U> {
+        impl<U: IndexBase> $name<U> {
             /// Maximum allowed index.
             pub fn max_index() -> usize {
                 BitField::<U>::max_index()
@@ -59,7 +59,7 @@ macro_rules! index_impls {
             }
         }
 
-        impl<U: Unsigned> TryFrom<usize> for $name<U> {
+        impl<U: IndexBase> TryFrom<usize> for $name<U> {
             type Error = IndexError;
 
             #[inline(always)]
@@ -68,21 +68,21 @@ macro_rules! index_impls {
             }
         }
 
-        impl<U: Unsigned> From<$name<U>> for usize {
+        impl<U: IndexBase> From<$name<U>> for usize {
             #[inline(always)]
             fn from(index: $name<U>) -> Self {
                 Self::from(index.0)
             }
         }
 
-        impl<U: Unsigned> std::fmt::Debug for $name<U> {
+        impl<U: IndexBase> std::fmt::Debug for $name<U> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 // avoid unnecessary newlines in alternate mode
                 write!(f, concat!(stringify!($name), "({})"), self.index())
             }
         }
 
-        impl<U: Unsigned> AsMut<$name<U>> for BitField<U> {
+        impl<U: IndexBase> AsMut<$name<U>> for BitField<U> {
             fn as_mut(&mut self) -> &mut $name<U> {
                 // safety: Index types are repr(transparent)
                 unsafe { &mut *(self as *mut BitField<U> as *mut $name<U>) }
@@ -90,7 +90,7 @@ macro_rules! index_impls {
         }
 
         #[cfg(feature = "serde")]
-        impl<U: serde::Serialize + Unsigned> serde::Serialize for $name<U> {
+        impl<U: serde::Serialize + IndexBase> serde::Serialize for $name<U> {
             #[inline]
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
@@ -101,7 +101,7 @@ macro_rules! index_impls {
         }
 
         #[cfg(feature = "serde")]
-        impl<'de, U: Unsigned + serde::Deserialize<'de>> serde::Deserialize<'de> for $name<U> {
+        impl<'de, U: IndexBase + serde::Deserialize<'de>> serde::Deserialize<'de> for $name<U> {
             #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
@@ -116,7 +116,7 @@ macro_rules! index_impls {
 index_impls!(NodeIndex);
 index_impls!(PortIndex);
 
-impl<U: Unsigned> Default for PortIndex<U> {
+impl<U: IndexBase> Default for PortIndex<U> {
     fn default() -> Self {
         PortIndex::new(0)
     }
@@ -127,18 +127,18 @@ impl<U: Unsigned> Default for PortIndex<U> {
 /// Uses the spare bit flag of the NodeIndex to store the `None` case.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct MaybeNodeIndex<U>(BitField<U>);
+pub struct MaybeNodeIndex<U = u32>(BitField<U>);
 
 /// Equivalent to `Option<PortIndex<U>>` but stored within the size of `U`.
 ///
 /// Uses the spare bit flag of the PortIndex to store the `None` case.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct MaybePortIndex<U>(BitField<U>);
+pub struct MaybePortIndex<U = u32>(BitField<U>);
 
 macro_rules! maybe_index_impls {
     ($maybe_index:ident, $index:ident) => {
-        impl<U: Unsigned> $maybe_index<U> {
+        impl<U: IndexBase> $maybe_index<U> {
             /// Create a new maybe index from an optional index.
             pub fn new(value: Option<$index<U>>) -> Self {
                 match value {
@@ -211,41 +211,41 @@ macro_rules! maybe_index_impls {
             }
         }
 
-        impl<U: Unsigned> fmt::Debug for $maybe_index<U> {
+        impl<U: IndexBase> fmt::Debug for $maybe_index<U> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{:?}", self.to_option())
             }
         }
 
-        impl<U: Unsigned> From<$index<U>> for $maybe_index<U> {
+        impl<U: IndexBase> From<$index<U>> for $maybe_index<U> {
             #[inline(always)]
             fn from(index: $index<U>) -> Self {
                 Self(index.0)
             }
         }
 
-        impl<U: Unsigned> From<$maybe_index<U>> for Option<$index<U>> {
+        impl<U: IndexBase> From<$maybe_index<U>> for Option<$index<U>> {
             #[inline(always)]
             fn from(maybe_index: $maybe_index<U>) -> Self {
                 maybe_index.to_option()
             }
         }
 
-        impl<U: Unsigned> From<Option<$index<U>>> for $maybe_index<U> {
+        impl<U: IndexBase> From<Option<$index<U>>> for $maybe_index<U> {
             #[inline(always)]
             fn from(index: Option<$index<U>>) -> Self {
                 Self::new(index)
             }
         }
 
-        impl<U: Unsigned> Default for $maybe_index<U> {
+        impl<U: IndexBase> Default for $maybe_index<U> {
             #[inline(always)]
             fn default() -> Self {
                 Self(BitField::new_none())
             }
         }
 
-        impl<U: Unsigned> IntoIterator for $maybe_index<U> {
+        impl<U: IndexBase> IntoIterator for $maybe_index<U> {
             type Item = $index<U>;
             type IntoIter = std::option::IntoIter<Self::Item>;
 
@@ -255,7 +255,7 @@ macro_rules! maybe_index_impls {
         }
 
         #[cfg(feature = "serde")]
-        impl<U: serde::Serialize + Unsigned> serde::Serialize for $maybe_index<U> {
+        impl<U: serde::Serialize + IndexBase> serde::Serialize for $maybe_index<U> {
             #[inline]
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
@@ -266,7 +266,7 @@ macro_rules! maybe_index_impls {
         }
 
         #[cfg(feature = "serde")]
-        impl<'de, U: Unsigned + serde::Deserialize<'de>> serde::Deserialize<'de>
+        impl<'de, U: IndexBase + serde::Deserialize<'de>> serde::Deserialize<'de>
             for $maybe_index<U>
         {
             #[inline]
@@ -285,12 +285,6 @@ macro_rules! maybe_index_impls {
 maybe_index_impls!(MaybeNodeIndex, NodeIndex);
 maybe_index_impls!(MaybePortIndex, PortIndex);
 
-impl MaybeNodeIndex<u32> {
-    /// The `None` value for `MaybeNodeIndex<u32>`.
-    // TODO: Added here so that [`crate::Hierarchy::new`] may be const.
-    pub const NONE: Self = Self(BitField(u32::MAX));
-}
-
 /// Port offset in a node.
 ///
 /// For an index type with n bits, the index value will be restricted to at
@@ -300,7 +294,7 @@ impl MaybeNodeIndex<u32> {
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct PortOffset<U = u16>(BitField<U>);
 
-impl<U: Unsigned> PortOffset<U> {
+impl<U: IndexBase> PortOffset<U> {
     /// Maximum allowed offset. One bit is reserved for the direction.
     pub fn max_offset() -> usize {
         BitField::<U>::max_index()
@@ -350,13 +344,13 @@ impl<U: Unsigned> PortOffset<U> {
     }
 }
 
-impl<U: Unsigned> Default for PortOffset<U> {
+impl<U: IndexBase> Default for PortOffset<U> {
     fn default() -> Self {
         PortOffset::new_outgoing(0)
     }
 }
 
-impl<U: Unsigned> std::fmt::Debug for PortOffset<U> {
+impl<U: IndexBase> std::fmt::Debug for PortOffset<U> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.direction() {
             Direction::Incoming => write!(f, "Incoming({})", self.index()),
@@ -376,7 +370,7 @@ mod serde_port_offset_impl {
         direction: Direction,
     }
 
-    impl<U: Unsigned> From<PortOffset<U>> for PortOffsetSer {
+    impl<U: IndexBase> From<PortOffset<U>> for PortOffsetSer {
         fn from(port_offset: PortOffset<U>) -> Self {
             Self {
                 index: port_offset.index(),
@@ -385,13 +379,13 @@ mod serde_port_offset_impl {
         }
     }
 
-    impl<U: Unsigned> From<PortOffsetSer> for PortOffset<U> {
+    impl<U: IndexBase> From<PortOffsetSer> for PortOffset<U> {
         fn from(port_offset: PortOffsetSer) -> Self {
             Self::new(port_offset.direction, port_offset.index)
         }
     }
 
-    impl<U: Serialize + Unsigned> Serialize for PortOffset<U> {
+    impl<U: Serialize + IndexBase> Serialize for PortOffset<U> {
         #[inline]
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -402,7 +396,7 @@ mod serde_port_offset_impl {
         }
     }
 
-    impl<'de, U: Unsigned + Deserialize<'de>> Deserialize<'de> for PortOffset<U> {
+    impl<'de, U: IndexBase + Deserialize<'de>> Deserialize<'de> for PortOffset<U> {
         #[inline]
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
@@ -430,18 +424,33 @@ mod serde_port_offset_impl {
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct BitField<U>(U);
 
+mod sealed {
+    /// Sealed supertrait to prevent external implementations of [`IndexBase`].
+    pub trait Sealed {}
+    impl Sealed for u8 {}
+    impl Sealed for u16 {}
+    impl Sealed for u32 {}
+    impl Sealed for u64 {}
+    impl Sealed for usize {}
+}
+
 /// Trait for unsigned integer types.
 ///
 /// This is a wrapper around the `num_traits::Unsigned`, along with additional
 /// bit logic traits that are typically implemented for unsigned integer types.
 ///
 /// Implementations are provided for `u8`, `u16`, `u32`, `u64`, and `usize`.
-pub trait Unsigned:
-    Copy
+///
+/// This trait is sealed and cannot be implemented outside of `portgraph`.
+pub trait IndexBase:
+    sealed::Sealed
+    + Copy
     + std::fmt::Debug
+    + std::hash::Hash
     + Ord
     + num_traits::Unsigned
     + num_traits::Bounded
+    + num_traits::NumAssign
     + num_traits::ToPrimitive
     + num_traits::FromPrimitive
     + ops::Shr<u8, Output = Self>
@@ -480,7 +489,7 @@ pub trait Unsigned:
     fn from_nonzero(nonzero: Self::NonZero) -> Self;
 }
 
-impl Unsigned for u8 {
+impl IndexBase for u8 {
     type NonZero = std::num::NonZeroU8;
 
     #[inline(always)]
@@ -498,7 +507,7 @@ impl Unsigned for u8 {
         nonzero.get()
     }
 }
-impl Unsigned for u16 {
+impl IndexBase for u16 {
     type NonZero = std::num::NonZeroU16;
 
     #[inline(always)]
@@ -516,7 +525,7 @@ impl Unsigned for u16 {
         nonzero.get()
     }
 }
-impl Unsigned for u32 {
+impl IndexBase for u32 {
     type NonZero = std::num::NonZeroU32;
 
     #[inline(always)]
@@ -534,7 +543,7 @@ impl Unsigned for u32 {
         nonzero.get()
     }
 }
-impl Unsigned for u64 {
+impl IndexBase for u64 {
     type NonZero = std::num::NonZeroU64;
 
     #[inline(always)]
@@ -552,7 +561,7 @@ impl Unsigned for u64 {
         nonzero.get()
     }
 }
-impl Unsigned for usize {
+impl IndexBase for usize {
     type NonZero = std::num::NonZeroUsize;
 
     #[inline(always)]
@@ -572,7 +581,7 @@ impl Unsigned for usize {
 }
 // leave out u128 on purpose (casts to usize will panic)
 
-impl<U: Unsigned> BitField<U> {
+impl<U: IndexBase> BitField<U> {
     /// Create a new bit field with the given index and bit flag.
     #[inline(always)]
     pub(crate) fn new(index: usize, bit_flag: bool) -> Self {
@@ -684,7 +693,7 @@ impl<U: Unsigned> BitField<U> {
     }
 }
 
-impl<U: Unsigned> TryFrom<usize> for BitField<U> {
+impl<U: IndexBase> TryFrom<usize> for BitField<U> {
     type Error = IndexError;
 
     #[inline]
@@ -697,7 +706,7 @@ impl<U: Unsigned> TryFrom<usize> for BitField<U> {
     }
 }
 
-impl<U: Unsigned> From<BitField<U>> for usize {
+impl<U: IndexBase> From<BitField<U>> for usize {
     #[inline]
     fn from(bit_field: BitField<U>) -> Self {
         bit_field.index().expect("invalid index")
@@ -786,7 +795,9 @@ mod tests {
 #[cfg(test)]
 #[cfg(feature = "serde")]
 mod test_serde {
-    use crate::{boundary::test::line_graph, MultiPortGraph, NodeIndex};
+    use crate::boundary::test::line_graph;
+    use crate::MultiPortGraph;
+    use crate::NodeIndex;
     use rstest::rstest;
 
     #[rstest]
