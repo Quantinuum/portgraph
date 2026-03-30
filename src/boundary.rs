@@ -35,7 +35,7 @@ pub struct BoundaryPort {
 }
 
 /// Trait for graph structures that define a boundary of input and output ports.
-pub trait HasBoundary<P: IndexBase> {
+pub trait HasBoundary<P: IndexBase = u32> {
     /// Returns the boundary of the node.
     fn port_boundary(&self) -> Cow<'_, Boundary<P>>;
 }
