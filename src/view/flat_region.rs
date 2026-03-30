@@ -35,20 +35,6 @@ where
     ///
     /// The root node is included in the region. For a view that does not
     /// include the root node, see [`FlatRegion::new_without_root`].
-    #[deprecated(since = "0.14.1", note = "Use `FlatRegion::new_with_root` instead")]
-    pub fn new(
-        graph: G,
-        hierarchy: &'a Hierarchy<G::NodeIndexBase>,
-        root: NodeIndex<G::NodeIndexBase>,
-    ) -> Self {
-        Self::new_with_root(graph, hierarchy, root)
-    }
-
-    /// Create a new region view including only a root node and its direct
-    /// children in a [`Hierarchy`].
-    ///
-    /// The root node is included in the region. For a view that does not
-    /// include the root node, see [`FlatRegion::new_without_root`].
     pub fn new_with_root(
         graph: G,
         hierarchy: impl Into<Cow<'a, Hierarchy<G::NodeIndexBase>>>,

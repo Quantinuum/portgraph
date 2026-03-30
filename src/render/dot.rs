@@ -127,8 +127,6 @@ where
             let node_style = self.node_style(node);
             let (node_label, attrs) = match node_style {
                 NodeStyle::Boxed { label, attrs } => (label, attrs),
-                #[allow(deprecated)]
-                NodeStyle::Box(label) => (label, PresentationStyle::new()),
                 NodeStyle::Hidden => {
                     // Ignore this node
                     continue;

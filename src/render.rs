@@ -65,9 +65,6 @@ impl PresentationStyle {
 pub enum NodeStyle {
     /// Ignore the node. No edges will be connected to it.
     Hidden,
-    /// Draw a box with the label inside.
-    #[deprecated(since = "0.14.1", note = "Use `Boxed` instead")]
-    Box(String),
     /// Draw a box with label inside.
     #[non_exhaustive]
     Boxed {
@@ -79,15 +76,6 @@ pub enum NodeStyle {
 }
 
 impl NodeStyle {
-    /// Show a node label with the default style.
-    #[deprecated(since = "0.14.1", note = "Use `boxed` instead")]
-    pub fn new(label: impl ToString) -> Self {
-        Self::Boxed {
-            label: label.to_string(),
-            attrs: Default::default(),
-        }
-    }
-
     /// Show a node in a box.
     ///
     /// Additional presentation attributes can be set using [`NodeStyle::with_attrs`].
