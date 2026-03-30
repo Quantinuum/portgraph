@@ -348,10 +348,6 @@ impl<'g, G: LinkView> MermaidBuilder<'g, G> {
 
         match style {
             NodeStyle::Hidden => self.push_strings(&[id.as_ref(), ":::hidden"]),
-            #[allow(deprecated)]
-            NodeStyle::Box(lbl) => {
-                self.push_strings(&[id.as_ref(), "[", &encode_label(&id, &lbl), "]"]);
-            }
             NodeStyle::Boxed { label, attrs } => {
                 self.push_strings(&[id.as_ref(), "[", &encode_label(&id, &label), "]"]);
                 if !attrs.is_empty() {
@@ -386,10 +382,6 @@ impl<'g, G: LinkView> MermaidBuilder<'g, G> {
                 &encode_label(&id, label),
                 "]",
             ]),
-            #[allow(deprecated)]
-            NodeStyle::Box(lbl) => {
-                self.push_strings(&["subgraph ", id.as_ref(), " [", &encode_label(&id, lbl), "]"])
-            }
         }
         self.indent += 1;
         self.push_line("direction LR");

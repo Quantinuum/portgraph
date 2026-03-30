@@ -37,12 +37,8 @@ impl<G: LinkView> TopoConvexChecker<G> {
     }
 
     /// The graph on which convexity queries can be made.
-    #[deprecated(note = "will return a reference to the graph in the future")]
-    pub fn graph(&self) -> G
-    where
-        G: Clone,
-    {
-        self.graph.clone()
+    pub fn graph(&self) -> &G {
+        &self.graph
     }
 
     /// Whether the subgraph induced by the node set is convex.
