@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.16.0](https://github.com/Quantinuum/portgraph/compare/v0.15.3...v0.16.0) - 2026-03-30
+
+### Bug Fixes
+
+- [**breaking**] NodeMeta and PortMeta should be generic ([#283](https://github.com/Quantinuum/portgraph/pull/283))
+
+### Documentation
+
+- document canonical order in `toposort` for nodes of the same rank ([#280](https://github.com/Quantinuum/portgraph/pull/280))
+
+### New Features
+
+- [**breaking**] Support parametric node and port types everywhere ([#284](https://github.com/Quantinuum/portgraph/pull/284))
+- [**breaking**] Remove deprecated definitions ([#285](https://github.com/Quantinuum/portgraph/pull/285))
+
 ## [0.15.3](https://github.com/Quantinuum/portgraph/compare/v0.15.2...v0.15.3) - 2025-12-08
 
 ### New Features
