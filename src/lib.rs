@@ -56,12 +56,6 @@
 //! - `pyo3` enables Python bindings.
 //!
 
-#[cfg(feature = "pyo3")]
-use pyo3::prelude::*;
-
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 pub mod algorithms;
 pub mod boundary;
 pub mod hierarchy;
@@ -94,48 +88,63 @@ pub use crate::view::{LinkMut, LinkView, MultiMut, MultiView, PortMut, PortView}
 #[doc(inline)]
 pub use crate::weights::Weights;
 
-/// Direction of a port.
-#[cfg_attr(feature = "pyo3", pyclass(eq, eq_int))]
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord, Hash, Default)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-pub enum Direction {
-    /// Input to a node.
-    #[default]
-    Incoming = 0,
-    /// Output from a node.
-    Outgoing = 1,
-}
+/// Direction enum and related impls.
+#[allow(deprecated)] // pyclass requires a `from_py_object` method on `pyo3` 0.28+
+mod direction {
+    use super::IndexError;
 
-impl Direction {
-    /// Incoming and outgoing directions.
-    pub const BOTH: [Direction; 2] = [Direction::Incoming, Direction::Outgoing];
+    #[cfg(feature = "pyo3")]
+    use pyo3::prelude::*;
 
-    /// Returns the opposite direction.
-    #[inline(always)]
-    pub fn reverse(self) -> Direction {
-        match self {
-            Direction::Incoming => Direction::Outgoing,
-            Direction::Outgoing => Direction::Incoming,
+    #[cfg(feature = "serde")]
+    use serde::{Deserialize, Serialize};
+
+    /// Direction of a port.
+    #[cfg_attr(feature = "pyo3", pyclass(eq, eq_int))]
+    #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord, Hash, Default)]
+    #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+    pub enum Direction {
+        /// Input to a node.
+        #[default]
+        Incoming = 0,
+        /// Output from a node.
+        Outgoing = 1,
+    }
+
+    impl Direction {
+        /// Incoming and outgoing directions.
+        pub const BOTH: [Direction; 2] = [Direction::Incoming, Direction::Outgoing];
+
+        /// Returns the opposite direction.
+        #[inline(always)]
+        pub fn reverse(self) -> Direction {
+            match self {
+                Direction::Incoming => Direction::Outgoing,
+                Direction::Outgoing => Direction::Incoming,
+            }
+        }
+    }
+
+    impl From<Direction> for usize {
+        #[inline(always)]
+        fn from(dir: Direction) -> Self {
+            dir as usize
+        }
+    }
+
+    impl TryFrom<usize> for Direction {
+        type Error = IndexError;
+
+        #[inline(always)]
+        fn try_from(dir: usize) -> Result<Self, Self::Error> {
+            match dir {
+                0 => Ok(Direction::Incoming),
+                1 => Ok(Direction::Outgoing),
+                index => Err(IndexError { index }),
+            }
         }
     }
 }
 
-impl From<Direction> for usize {
-    #[inline(always)]
-    fn from(dir: Direction) -> Self {
-        dir as usize
-    }
-}
-
-impl TryFrom<usize> for Direction {
-    type Error = IndexError;
-
-    #[inline(always)]
-    fn try_from(dir: usize) -> Result<Self, Self::Error> {
-        match dir {
-            0 => Ok(Direction::Incoming),
-            1 => Ok(Direction::Outgoing),
-            index => Err(IndexError { index }),
-        }
-    }
-}
+#[doc(inline)]
+pub use direction::Direction;
