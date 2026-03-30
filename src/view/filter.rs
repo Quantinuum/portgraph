@@ -13,6 +13,7 @@ pub type LinkFilter<Ctx, P> = fn(PortIndex<P>, &Ctx) -> bool;
 
 /// A wrapper around a [`PortView`] that filters out nodes and links.
 ///
+///
 /// Both nodes and links can be filtered by providing the filter functions
 /// `node_filter` and `link_filter`.
 ///
@@ -32,8 +33,8 @@ pub struct FilteredGraph<G, FN, FP, Context = ()> {
 }
 
 /// A wrapper around a portgraph that filters out nodes.
-pub type NodeFiltered<G, FN, P, Context = ()> =
-    FilteredGraph<G, FN, fn(PortIndex<P>, &Context) -> bool, Context>;
+pub type NodeFiltered<G, FN, Context = ()> =
+    FilteredGraph<G, FN, fn(PortIndex<<G as PortView>::PortIndexBase>, &Context) -> bool, Context>;
 
 impl<G, FN, FP, Ctx> FilteredGraph<G, FN, FP, Ctx>
 where
@@ -55,7 +56,7 @@ where
     }
 }
 
-impl<G, F, P, Ctx> NodeFiltered<G, F, P, Ctx>
+impl<G: PortView, F, Ctx> NodeFiltered<G, F, Ctx>
 where
     G: Clone,
 {
