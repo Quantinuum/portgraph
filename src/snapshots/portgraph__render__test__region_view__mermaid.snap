@@ -2,6 +2,10 @@
 source: src/render.rs
 expression: mermaid
 ---
+---
+config:
+    layout: elk
+---
 graph LR
     subgraph 1 [1]
         direction LR

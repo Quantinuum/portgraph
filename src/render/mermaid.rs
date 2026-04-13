@@ -1,5 +1,8 @@
 //! Functions to encode a `PortGraph` in mermaid format.
 
+mod layout;
+pub use layout::MermaidLayout;
+
 use std::collections::HashMap;
 use std::fmt::Display;
 
@@ -40,11 +43,18 @@ const INDENTATION_SEPARATOR: &str = "    ";
 /// ```
 #[allow(clippy::type_complexity)]
 pub struct MermaidFormatter<'g, G: LinkView> {
+    /// The graph to encode.
     graph: &'g G,
+    /// The hierarchy to use for the graph. If `None`, the graph is treated as
+    /// flat.
     forest: Option<&'g Hierarchy<G::NodeIndexBase>>,
+    /// The styling function for nodes.
     node_style: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> NodeStyle + 'g>>,
+    /// The styling function for edges.
     #[allow(clippy::type_complexity)]
     edge_style: Option<Box<dyn FnMut(G::LinkEndpoint, G::LinkEndpoint) -> EdgeStyle + 'g>>,
+    /// Mermaid graph layout kernel.
+    layout: MermaidLayout,
 }
 
 impl<'g, G> MermaidFormatter<'g, G>
@@ -58,6 +68,7 @@ where
             forest: None,
             node_style: None,
             edge_style: None,
+            layout: MermaidLayout::default(),
         }
     }
 
@@ -100,9 +111,16 @@ where
         self.with_node_style(|n| NodeStyle::boxed(&weights.nodes[n]))
     }
 
+    /// Set the layout kernel for the mermaid graph.
+    pub fn with_layout(mut self, layout: MermaidLayout) -> Self {
+        self.layout = layout;
+        self
+    }
+
     /// Encode the graph in mermaid format.
     pub fn finish(mut self) -> String {
-        let mut mermaid = MermaidBuilder::init(self.node_style.take(), self.edge_style.take());
+        let mut mermaid =
+            MermaidBuilder::init(self.node_style.take(), self.edge_style.take(), self.layout);
 
         // Explore the hierarchy from the root nodes, and add the nodes and edges to the mermaid definition.
         self.explore_forest(&mut mermaid);
@@ -301,13 +319,20 @@ impl<'g, G: LinkView> MermaidBuilder<'g, G> {
     pub fn init(
         node_style: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> NodeStyle + 'g>>,
         edge_style: Option<Box<dyn FnMut(G::LinkEndpoint, G::LinkEndpoint) -> EdgeStyle + 'g>>,
+        layout: MermaidLayout,
     ) -> Self {
-        Self {
-            output: "graph LR\n".to_string(),
-            indent: 1,
+        let mut builder = Self {
+            output: String::new(),
+            indent: 0,
             node_style,
             edge_style,
-        }
+        };
+
+        builder.emit_config(layout);
+        builder.push_line("graph LR");
+        builder.indent += 1;
+
+        builder
     }
 
     /// Push an arbitrary line of text to the output.
@@ -360,6 +385,22 @@ impl<'g, G: LinkView> MermaidBuilder<'g, G> {
                 }
             }
         }
+    }
+
+    /// Emit the configuration block at the start of the mermaid definition, if
+    /// needed.
+    pub fn emit_config(&mut self, layout: MermaidLayout) {
+        if !layout.requires_config() {
+            return;
+        }
+        self.push_line("---");
+        self.push_line("config:");
+        self.indent += 1;
+
+        layout.emit_config(self);
+
+        self.indent -= 1;
+        self.push_line("---");
     }
 
     /// Start a new subgraph block.

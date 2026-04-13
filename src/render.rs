@@ -7,7 +7,7 @@ mod mermaid;
 use std::borrow::Cow;
 
 pub use dot::{DotFormat, DotFormatter};
-pub use mermaid::{MermaidFormat, MermaidFormatter};
+pub use mermaid::{MermaidFormat, MermaidFormatter, MermaidLayout};
 
 use self::mermaid::encode_label;
 
@@ -228,6 +228,7 @@ mod test {
 
     use rstest::{fixture, rstest};
 
+    use crate::render::MermaidLayout;
     use crate::view::Region;
     use crate::LinkMut;
     use crate::PortMut;
@@ -418,6 +419,44 @@ mod test {
         let mermaid = fmt.finish();
 
         let name = format!("{name}__mermaid");
+        insta::assert_snapshot!(name, mermaid);
+    }
+
+    /// Changing the mermaid layout options should only affect the emitted
+    /// configuration block, not the graph structure.
+    #[rstest]
+    #[case::elk(MermaidLayout::Elk)]
+    #[case::dagre(MermaidLayout::Dagre)]
+    #[cfg_attr(miri, ignore)] // Opening files is not supported in (isolated) miri
+    fn mermaid_layout<WN: Display + Clone, WP>(
+        #[case] layout: MermaidLayout,
+        flat_graph: (
+            &str,
+            impl MermaidFormat<NodeIndexBase = u32, PortIndexBase = u32>,
+            Option<Hierarchy>,
+            Option<Weights<WN, WP>>,
+            Option<impl FnMut(NodeIndex) -> NodeStyle>,
+        ),
+    ) {
+        let (name, graph, hierarchy, weights, node_style) = flat_graph;
+
+        let fmt = graph.mermaid_format();
+        let fmt = match &hierarchy {
+            Some(h) => fmt.with_hierarchy(h),
+            None => fmt,
+        };
+        let fmt = match node_style {
+            Some(node_style) => fmt.with_node_style(node_style),
+            None => fmt,
+        };
+        let fmt = match &weights {
+            Some(w) => fmt.with_weights(w),
+            None => fmt,
+        };
+        let fmt = fmt.with_layout(layout);
+        let mermaid = fmt.finish();
+
+        let name = format!("{name}__mermaid__{layout:?}");
         insta::assert_snapshot!(name, mermaid);
     }
 
