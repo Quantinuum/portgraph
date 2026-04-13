@@ -10,6 +10,7 @@ use super::MermaidBuilder;
 ///
 /// Defaults to `elk`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum MermaidLayout {
     /// The layout engine used by default in mermaid.
     ///
