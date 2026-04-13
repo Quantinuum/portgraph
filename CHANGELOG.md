@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.16.1](https://github.com/Quantinuum/portgraph/compare/v0.16.0...v0.16.1) - 2026-04-13
+
+### New Features
+
+- Add layout options to mermaid renderer ([#288](https://github.com/Quantinuum/portgraph/pull/288))
+
 ## [0.16.0](https://github.com/Quantinuum/portgraph/compare/v0.15.3...v0.16.0) - 2026-03-30
 
 ### Bug Fixes
