@@ -2,13 +2,9 @@
 source: src/render.rs
 expression: mermaid
 ---
----
-config:
-    layout: elk
----
 graph LR
-    2["node3"]
-    1["node2"]
-    0["node1"]
+    2[2]
+    1[1]
+    0[0]
     0-->1
     0-->2
