@@ -165,11 +165,9 @@ impl<N: IndexBase> DynamicTopoSort<N> {
         let ub = from_pos;
         let delta_f = self.cone(to, ub, graph, Direction::Outgoing);
         let delta_b = self.cone(from, lb, graph, Direction::Incoming);
-        let mut new_pos = to_pos;
-        for w in delta_b.into_iter().chain(delta_f) {
+        for (new_pos, w) in (to_pos..).zip(delta_b.into_iter().chain(delta_f)) {
             self.order[new_pos] = w;
             self.node_to_pos.insert(w, new_pos);
-            new_pos += 1;
         }
     }
 
