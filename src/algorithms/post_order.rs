@@ -257,17 +257,18 @@ where
                         continue;
                     }
 
-                    let Some(link) = self.graph.port_link(port) else {
-                        continue;
-                    };
-                    let link_node = self.graph.port_node(link).unwrap();
+                    let links: Vec<_> = self.graph.port_links(port).collect();
+                    for link in links {
+                        let link_node = self.graph.port_node(link.1.into()).unwrap();
 
-                    if self.ignore_node(link_node) || self.ignore_port(link_node, link.into()) {
-                        continue;
-                    }
+                        if self.ignore_node(link_node) || self.ignore_port(link_node, link.1.into())
+                        {
+                            continue;
+                        }
 
-                    if !self.visited.get(link_node) {
-                        self.stack.push(link_node);
+                        if !self.visited.get(link_node) {
+                            self.stack.push(link_node);
+                        }
                     }
                 }
             } else if !self.finished.get(next) {
@@ -318,7 +319,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{LinkMut, PortMut};
+    use crate::{LinkMut, MultiPortGraph, PortMut};
 
     use super::*;
 
@@ -407,6 +408,46 @@ mod tests {
         // Backwards starting from `c`
         let order: PostOrder<_> = postorder(&graph, vec![c], Direction::Incoming);
         assert_eq!(order.collect::<Vec<_>>(), vec![a, d, b, c]);
+    }
+
+    #[test]
+    fn postorder_multiport_diamond() {
+        let mut graph = MultiPortGraph::<u32>::new();
+        // a --> b - -> d
+        //  \        /
+        //   \-> c -/
+        let a = graph.add_node(0, 1);
+        let b = graph.add_node(1, 1);
+        let c = graph.add_node(1, 1);
+        let d = graph.add_node(1, 0);
+
+        let a_out = graph.ports(a, Direction::Outgoing).next().unwrap();
+        let b_out = graph.ports(b, Direction::Outgoing).next().unwrap();
+        let c_out = graph.ports(c, Direction::Outgoing).next().unwrap();
+
+        let b_in = graph.ports(b, Direction::Incoming).next().unwrap();
+        let c_in = graph.ports(c, Direction::Incoming).next().unwrap();
+        let d_in = graph.ports(d, Direction::Incoming).next().unwrap();
+
+        // Linking a_out twice will implicitly create a node that we do not want
+        // to appear in the post order when passing a MultiPortGraph.
+        graph.link_ports(a_out, b_in).unwrap();
+        graph.link_ports(a_out, c_in).unwrap();
+        // Linking d_in twice will also create an implicit node.
+        graph.link_ports(b_out, d_in).unwrap();
+        graph.link_ports(c_out, d_in).unwrap();
+
+        // Raw portgraph order starting from `a` includes implicit nodes.
+        let order: PostOrder<_> = postorder(graph.as_portgraph(), vec![a], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>().len(), 6);
+
+        // Forward starting from `a`
+        let order: PostOrder<_> = postorder(&graph, vec![a], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>(), vec![d, c, b, a]);
+
+        // Backwards starting from `c`
+        let order: PostOrder<_> = postorder(&graph, vec![c], Direction::Incoming);
+        assert_eq!(order.collect::<Vec<_>>(), vec![a, c]);
     }
 
     #[test]
