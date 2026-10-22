@@ -1,9 +1,9 @@
+use std::fmt::Debug;
 use std::iter::FusedIterator;
 
 use bitvec::vec::BitVec;
 
-use crate::index::IndexBase;
-use crate::{Direction, LinkView, NodeIndex, PortGraph, PortIndex, PortView};
+use crate::{Direction, LinkView, NodeIndex, PortIndex, PortView, SecondaryMap};
 
 /// Returns an iterator doing a post-order traversal of a spanning tree in a
 /// [`PortGraph`].
@@ -42,20 +42,24 @@ use crate::{Direction, LinkView, NodeIndex, PortGraph, PortIndex, PortView};
 /// graph.link_nodes(d, 0, e, 0).unwrap();
 ///
 /// // Forward starting from `a`
-/// let order = postorder(&graph, vec![a], Direction::Outgoing).collect::<Vec<_>>();
-/// assert_eq!(order, vec![c, e, d, f, b, a]);
+/// let order: PostOrder<_> = postorder(&graph, vec![a], Direction::Outgoing);
+/// assert_eq!(order.collect::<Vec<_>>(), vec![c, e, d, f, b, a]);
 ///
 /// // Reverse starting from `e`
-/// let order = postorder(&graph, vec![e], Direction::Incoming).collect::<Vec<_>>();
-/// assert_eq!(order, vec![a, b, d, e]);
+/// let order: PostOrder<_> = postorder(&graph, vec![e], Direction::Incoming);
+/// assert_eq!(order.collect::<Vec<_>>(), vec![a, b, d, e]);
 /// ```
 ///
 ///
-pub fn postorder<N: IndexBase, P: IndexBase, PO: IndexBase>(
-    graph: &PortGraph<N, P, PO>,
-    source: impl IntoIterator<Item = NodeIndex<N>>,
+pub fn postorder<G, Map>(
+    graph: G,
+    source: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
     direction: Direction,
-) -> PostOrder<'_, N, P, PO> {
+) -> PostOrder<'static, G, Map>
+where
+    Map: SecondaryMap<NodeIndex<G::NodeIndexBase>, bool>,
+    G: LinkView,
+{
     PostOrder::new(graph, source, direction, None, None)
 }
 
@@ -100,34 +104,38 @@ pub fn postorder<N: IndexBase, P: IndexBase, PO: IndexBase>(
 /// graph.link_nodes(d, 0, e, 0).unwrap();
 ///
 /// // Forward starting from `a`
-/// let order = postorder_filtered(
+/// let order: PostOrder<_> = postorder_filtered(
 ///     &graph,
 ///     vec![a],
 ///     Direction::Outgoing,
 ///     |_| true,
 ///     |_node, port| ![graph.output(b, 2), graph.input(d, 0)].contains(&Some(port))
-/// ).collect::<Vec<_>>();
-/// assert_eq!(order, vec![c, b, a]);
+/// );
+/// assert_eq!(order.collect::<Vec<_>>(), vec![c, b, a]);
 ///
 /// // Reverse starting from `e`
-/// let order = postorder_filtered(
+/// let order: PostOrder<_> = postorder_filtered(
 ///     &graph,
 ///     vec![e],
 ///     Direction::Incoming,
 ///     |n| n != b,
 ///     |_,_| true
-/// ).collect::<Vec<_>>();
-/// assert_eq!(order, vec![d, e]);
+/// );
+/// assert_eq!(order.collect::<Vec<_>>(), vec![d, e]);
 /// ```
 ///
 ///
-pub fn postorder_filtered<'graph, N: IndexBase, P: IndexBase, PO: IndexBase>(
-    graph: &'graph PortGraph<N, P, PO>,
-    source: impl IntoIterator<Item = NodeIndex<N>>,
+pub fn postorder_filtered<'f, G, Map>(
+    graph: G,
+    source: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
     direction: Direction,
-    node_filter: impl FnMut(NodeIndex<N>) -> bool + 'graph,
-    port_filter: impl FnMut(NodeIndex<N>, PortIndex<P>) -> bool + 'graph,
-) -> PostOrder<'graph, N, P, PO> {
+    node_filter: impl FnMut(NodeIndex<G::NodeIndexBase>) -> bool + 'f,
+    port_filter: impl FnMut(NodeIndex<G::NodeIndexBase>, PortIndex<G::PortIndexBase>) -> bool + 'f,
+) -> PostOrder<'f, G, Map>
+where
+    Map: SecondaryMap<NodeIndex<G::NodeIndexBase>, bool>,
+    G: LinkView,
+{
     PostOrder::new(
         graph,
         source,
@@ -141,36 +149,52 @@ pub fn postorder_filtered<'graph, N: IndexBase, P: IndexBase, PO: IndexBase>(
 ///
 /// See [`postorder`] for more information.
 #[allow(clippy::type_complexity)]
-pub struct PostOrder<'graph, N: IndexBase, P: IndexBase, PO: IndexBase> {
-    graph: &'graph PortGraph<N, P, PO>,
-    stack: Vec<NodeIndex<N>>,
-    visited: BitVec,
-    finished: BitVec,
+pub struct PostOrder<'f, G, Map = BitVec>
+where
+    G: PortView,
+{
+    graph: G,
+    stack: Vec<NodeIndex<G::NodeIndexBase>>,
+    visited: Map,
+    finished: Map,
     direction: Direction,
     /// The number of nodes already returned from the iterator.
     /// This is used to calculate the upper bound for the iterator's `size_hint`.
     nodes_seen: usize,
     /// A filter closure for the nodes to visit. If the closure returns false,
     /// the node is skipped.
-    node_filter: Option<Box<dyn FnMut(NodeIndex<N>) -> bool + 'graph>>,
+    node_filter: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> bool + 'f>>,
     /// A filter closure for the ports to visit. If the closure returns false,
     /// the port is skipped.
-    port_filter: Option<Box<dyn FnMut(NodeIndex<N>, PortIndex<P>) -> bool + 'graph>>,
+    port_filter: Option<
+        Box<dyn FnMut(NodeIndex<G::NodeIndexBase>, PortIndex<G::PortIndexBase>) -> bool + 'f>,
+    >,
 }
 
-impl<'graph, N: IndexBase, P: IndexBase, PO: IndexBase> PostOrder<'graph, N, P, PO> {
+impl<'f, G, Map> PostOrder<'f, G, Map>
+where
+    Map: SecondaryMap<NodeIndex<G::NodeIndexBase>, bool>,
+    G: LinkView,
+{
     #[allow(clippy::type_complexity)]
     fn new(
-        graph: &'graph PortGraph<N, P, PO>,
-        source: impl IntoIterator<Item = NodeIndex<N>>,
+        graph: G,
+        source: impl IntoIterator<Item = NodeIndex<G::NodeIndexBase>>,
         direction: Direction,
-        mut node_filter: Option<Box<dyn FnMut(NodeIndex<N>) -> bool + 'graph>>,
-        port_filter: Option<Box<dyn FnMut(NodeIndex<N>, PortIndex<P>) -> bool + 'graph>>,
+        mut node_filter: Option<Box<dyn FnMut(NodeIndex<G::NodeIndexBase>) -> bool + 'f>>,
+        port_filter: Option<
+            Box<dyn FnMut(NodeIndex<G::NodeIndexBase>, PortIndex<G::PortIndexBase>) -> bool + 'f>,
+        >,
     ) -> Self {
-        let mut visited = BitVec::with_capacity(graph.node_capacity());
-        visited.resize(graph.node_capacity(), false);
-        let mut finished = BitVec::with_capacity(graph.node_capacity());
-        finished.resize(graph.node_capacity(), false);
+        let mut visited: Map = SecondaryMap::new();
+        let mut finished: Map = SecondaryMap::new();
+        // If the default value of `Map` is not `false`, we must mark all ports as not visited.
+        if visited.default_value() {
+            for node in graph.nodes_iter() {
+                visited.set(node, false);
+                finished.set(node, false);
+            }
+        }
 
         let mut source: Vec<_> = if let Some(node_filter) = node_filter.as_mut() {
             source.into_iter().filter(|&n| node_filter(n)).collect()
@@ -190,53 +214,54 @@ impl<'graph, N: IndexBase, P: IndexBase, PO: IndexBase> PostOrder<'graph, N, P, 
             port_filter,
         }
     }
-
-    /// Returns `true` if the node should be ignored.
-    #[inline]
-    fn ignore_node(&mut self, node: NodeIndex<N>) -> bool {
-        !self
-            .node_filter
-            .as_mut()
-            .map_or(true, |filter| filter(node))
-    }
-
-    /// Returns `true` if the port should be ignored.
-    #[inline]
-    fn ignore_port(&mut self, node: NodeIndex<N>, port: PortIndex<P>) -> bool {
-        !self
-            .port_filter
-            .as_mut()
-            .map_or(true, |filter| filter(node, port))
-    }
 }
 
-impl<N: IndexBase, P: IndexBase, PO: IndexBase> Iterator for PostOrder<'_, N, P, PO> {
-    type Item = NodeIndex<N>;
+impl<G, Map> Iterator for PostOrder<'_, G, Map>
+where
+    Map: SecondaryMap<NodeIndex<G::NodeIndexBase>, bool>,
+    G: LinkView,
+{
+    type Item = NodeIndex<G::NodeIndexBase>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(next) = self.stack.last().copied() {
-            if !self.visited.replace(next.index(), true) {
+            if !self.visited.get(next) {
+                self.visited.set(next, true);
+                let ports = self.graph.ports(next, self.direction).collect::<Vec<_>>();
                 // The node is visited for the first time. We leave the node on the stack and push
                 // all of its neighbours in the traversal direction.
-                for port in self.graph._ports(next, self.direction).rev() {
-                    if self.ignore_port(next, port) {
+                for port in ports.into_iter().rev() {
+                    if !self
+                        .port_filter
+                        .as_mut()
+                        .map_or(true, |filter| filter(next, port))
+                    {
                         continue;
                     }
 
-                    let Some(link) = self.graph.port_link(port) else {
-                        continue;
-                    };
-                    let link_node = self.graph.port_node(link).unwrap();
+                    for link in self.graph.port_links(port) {
+                        let link_endpoint = link.1.into();
+                        let link_node = self.graph.port_node(link_endpoint).unwrap();
 
-                    if self.ignore_node(link_node) || self.ignore_port(link_node, link) {
-                        continue;
-                    }
+                        if !self
+                            .node_filter
+                            .as_mut()
+                            .map_or(true, |filter| filter(link_node))
+                            || !self
+                                .port_filter
+                                .as_mut()
+                                .map_or(true, |filter| filter(link_node, link_endpoint))
+                        {
+                            continue;
+                        }
 
-                    if !self.visited[link_node.index()] {
-                        self.stack.push(link_node);
+                        if !self.visited.get(link_node) {
+                            self.stack.push(link_node);
+                        }
                     }
                 }
-            } else if !self.finished.replace(next.index(), true) {
+            } else if !self.finished.get(next) {
+                self.finished.set(next, true);
                 // The node is visited for the second time. We remove it from the stack and return
                 // as the next node in the traversal.
                 self.stack.pop();
@@ -257,9 +282,18 @@ impl<N: IndexBase, P: IndexBase, PO: IndexBase> Iterator for PostOrder<'_, N, P,
     }
 }
 
-impl<N: IndexBase, P: IndexBase, PO: IndexBase> FusedIterator for PostOrder<'_, N, P, PO> {}
+impl<G, Map> FusedIterator for PostOrder<'_, G, Map>
+where
+    Map: SecondaryMap<NodeIndex<G::NodeIndexBase>, bool>,
+    G: LinkView,
+{
+}
 
-impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for PostOrder<'_, N, P, PO> {
+impl<G, Map> std::fmt::Debug for PostOrder<'_, G, Map>
+where
+    Map: Debug,
+    G: Debug + PortView,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PostOrder")
             .field("graph", &self.graph)
@@ -274,7 +308,7 @@ impl<N: IndexBase, P: IndexBase, PO: IndexBase> std::fmt::Debug for PostOrder<'_
 
 #[cfg(test)]
 mod tests {
-    use crate::{LinkMut, PortMut};
+    use crate::{LinkMut, MultiPortGraph, PortMut};
 
     use super::*;
 
@@ -301,20 +335,20 @@ mod tests {
         graph.link_nodes(d, 0, e, 1).unwrap();
 
         // Forward starting from `a`
-        let order = postorder(&graph, vec![a], Direction::Outgoing).collect::<Vec<_>>();
-        assert_eq!(order, vec![c, e, d, f, b, a]);
+        let order: PostOrder<_> = postorder(&graph, vec![a], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>(), vec![c, e, d, f, b, a]);
 
         // Skipping `a`, starting from `b`
-        let order = postorder(&graph, vec![b], Direction::Outgoing).collect::<Vec<_>>();
-        assert_eq!(order, vec![c, e, d, f, b]);
+        let order: PostOrder<_> = postorder(&graph, vec![b], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>(), vec![c, e, d, f, b]);
 
         // Exploring `d` before `b`
-        let order = postorder(&graph, vec![d, b], Direction::Outgoing).collect::<Vec<_>>();
-        assert_eq!(order, vec![e, d, c, f, b]);
+        let order: PostOrder<_> = postorder(&graph, vec![d, b], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>(), vec![e, d, c, f, b]);
 
         // Reverse starting from `e`
-        let order = postorder(&graph, vec![e], Direction::Incoming).collect::<Vec<_>>();
-        assert_eq!(order, vec![a, b, d, e]);
+        let order: PostOrder<_> = postorder(&graph, vec![e], Direction::Incoming);
+        assert_eq!(order.collect::<Vec<_>>(), vec![a, b, d, e]);
     }
 
     #[test]
@@ -334,12 +368,12 @@ mod tests {
         graph.link_nodes(c, 0, d, 1).unwrap();
 
         // Forward starting from `a`
-        let order = postorder(&graph, vec![a], Direction::Outgoing).collect::<Vec<_>>();
-        assert_eq!(order, vec![d, c, b, a]);
+        let order: PostOrder<_> = postorder(&graph, vec![a], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>(), vec![d, c, b, a]);
 
         // Backwards starting from `d`
-        let order = postorder(&graph, vec![d], Direction::Incoming).collect::<Vec<_>>();
-        assert_eq!(order, vec![a, b, c, d]);
+        let order: PostOrder<_> = postorder(&graph, vec![d], Direction::Incoming);
+        assert_eq!(order.collect::<Vec<_>>(), vec![a, b, c, d]);
     }
 
     #[test]
@@ -357,12 +391,52 @@ mod tests {
         graph.link_nodes(d, 0, b, 2).unwrap();
 
         // Forward starting from `a`
-        let order = postorder(&graph, vec![a], Direction::Outgoing).collect::<Vec<_>>();
-        assert_eq!(order, vec![d, c, b, a]);
+        let order: PostOrder<_> = postorder(&graph, vec![a], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>(), vec![d, c, b, a]);
 
         // Backwards starting from `c`
-        let order = postorder(&graph, vec![c], Direction::Incoming).collect::<Vec<_>>();
-        assert_eq!(order, vec![a, d, b, c]);
+        let order: PostOrder<_> = postorder(&graph, vec![c], Direction::Incoming);
+        assert_eq!(order.collect::<Vec<_>>(), vec![a, d, b, c]);
+    }
+
+    #[test]
+    fn postorder_multiport_diamond() {
+        let mut graph = MultiPortGraph::<u32>::new();
+        // a --> b - -> d
+        //  \        /
+        //   \-> c -/
+        let a = graph.add_node(0, 1);
+        let b = graph.add_node(1, 1);
+        let c = graph.add_node(1, 1);
+        let d = graph.add_node(1, 0);
+
+        let a_out = graph.ports(a, Direction::Outgoing).next().unwrap();
+        let b_out = graph.ports(b, Direction::Outgoing).next().unwrap();
+        let c_out = graph.ports(c, Direction::Outgoing).next().unwrap();
+
+        let b_in = graph.ports(b, Direction::Incoming).next().unwrap();
+        let c_in = graph.ports(c, Direction::Incoming).next().unwrap();
+        let d_in = graph.ports(d, Direction::Incoming).next().unwrap();
+
+        // Linking a_out twice will implicitly create a node that we do not want
+        // to appear in the post order when passing a MultiPortGraph.
+        graph.link_ports(a_out, b_in).unwrap();
+        graph.link_ports(a_out, c_in).unwrap();
+        // Linking d_in twice will also create an implicit node.
+        graph.link_ports(b_out, d_in).unwrap();
+        graph.link_ports(c_out, d_in).unwrap();
+
+        // Raw portgraph order starting from `a` includes implicit nodes.
+        let order: PostOrder<_> = postorder(graph.as_portgraph(), vec![a], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>().len(), 6);
+
+        // Forward starting from `a`
+        let order: PostOrder<_> = postorder(&graph, vec![a], Direction::Outgoing);
+        assert_eq!(order.collect::<Vec<_>>(), vec![d, c, b, a]);
+
+        // Backwards starting from `c`
+        let order: PostOrder<_> = postorder(&graph, vec![c], Direction::Incoming);
+        assert_eq!(order.collect::<Vec<_>>(), vec![a, c]);
     }
 
     #[test]
@@ -383,26 +457,23 @@ mod tests {
         graph.link_nodes(b, 2, d, 2).unwrap(); // Double link
 
         // Completely node-filtered
-        let order =
-            postorder_filtered(&graph, vec![a], Direction::Outgoing, |_| false, |_, _| true)
-                .collect::<Vec<_>>();
-        assert_eq!(order, vec![]);
+        let order: PostOrder<_> =
+            postorder_filtered(&graph, vec![a], Direction::Outgoing, |_| false, |_, _| true);
+        assert_eq!(order.collect::<Vec<_>>(), vec![]);
 
         // Completely edge-filtered
-        let order =
-            postorder_filtered(&graph, vec![a], Direction::Outgoing, |_| true, |_, _| false)
-                .collect::<Vec<_>>();
-        assert_eq!(order, vec![a]);
+        let order: PostOrder<_> =
+            postorder_filtered(&graph, vec![a], Direction::Outgoing, |_| true, |_, _| false);
+        assert_eq!(order.collect::<Vec<_>>(), vec![a]);
 
         // Backwards starting from `d`. Filtering one of the double links from `b`, and node `c`.
-        let order = postorder_filtered(
+        let order: PostOrder<_> = postorder_filtered(
             &graph,
             vec![d],
             Direction::Incoming,
             |n| n != c,
             |_, p| Some(p) != graph.output(b, 2),
-        )
-        .collect::<Vec<_>>();
-        assert_eq!(order, vec![a, b, d]);
+        );
+        assert_eq!(order.collect::<Vec<_>>(), vec![a, b, d]);
     }
 }

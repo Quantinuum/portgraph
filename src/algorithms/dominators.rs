@@ -1,3 +1,5 @@
+use bitvec::vec::BitVec;
+
 use super::postorder_filtered;
 use crate::index::IndexBase;
 use crate::index::MaybeNodeIndex;
@@ -149,7 +151,7 @@ where
             UnmanagedDenseMap::with_capacity(graph.node_capacity());
         let mut index_to_node = Vec::with_capacity(graph.node_capacity());
 
-        for (index, node) in postorder_filtered(
+        for (index, node) in postorder_filtered::<&PortGraph<N, P, PO>, BitVec>(
             graph,
             [entry],
             direction,
