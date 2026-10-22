@@ -214,28 +214,6 @@ where
             port_filter,
         }
     }
-
-    /// Returns `true` if the node should be ignored.
-    #[inline]
-    fn ignore_node(&mut self, node: NodeIndex<G::NodeIndexBase>) -> bool {
-        !self
-            .node_filter
-            .as_mut()
-            .map_or(true, |filter| filter(node))
-    }
-
-    /// Returns `true` if the port should be ignored.
-    #[inline]
-    fn ignore_port(
-        &mut self,
-        node: NodeIndex<G::NodeIndexBase>,
-        port: PortIndex<G::PortIndexBase>,
-    ) -> bool {
-        !self
-            .port_filter
-            .as_mut()
-            .map_or(true, |filter| filter(node, port))
-    }
 }
 
 impl<G, Map> Iterator for PostOrder<'_, G, Map>
@@ -253,15 +231,26 @@ where
                 // The node is visited for the first time. We leave the node on the stack and push
                 // all of its neighbours in the traversal direction.
                 for port in ports.into_iter().rev() {
-                    if self.ignore_port(next, port) {
+                    if !self
+                        .port_filter
+                        .as_mut()
+                        .map_or(true, |filter| filter(next, port))
+                    {
                         continue;
                     }
 
-                    let links: Vec<_> = self.graph.port_links(port).collect();
-                    for link in links {
-                        let link_node = self.graph.port_node(link.1.into()).unwrap();
+                    for link in self.graph.port_links(port) {
+                        let link_endpoint = link.1.into();
+                        let link_node = self.graph.port_node(link_endpoint).unwrap();
 
-                        if self.ignore_node(link_node) || self.ignore_port(link_node, link.1.into())
+                        if !self
+                            .node_filter
+                            .as_mut()
+                            .map_or(true, |filter| filter(link_node))
+                            || !self
+                                .port_filter
+                                .as_mut()
+                                .map_or(true, |filter| filter(link_node, link_endpoint))
                         {
                             continue;
                         }
