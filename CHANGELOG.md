@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.16.3](https://github.com/Quantinuum/portgraph/compare/v0.16.2...v0.16.3) - 2026-10-28
+
+### New Features
+
+- Bump maximum pyo3 version to 0.30.x ([#310](https://github.com/Quantinuum/portgraph/pull/310))
+
 ## [0.16.2](https://github.com/Quantinuum/portgraph/compare/v0.16.1...v0.16.2) - 2026-09-07
 
 ### New Features
