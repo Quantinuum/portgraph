@@ -19,6 +19,7 @@ use std::cmp::Ordering;
 ///    ┗> d ┛
 ///
 /// ```
+/// # if cfg!(miri) { return; } // bitvec 1.1.1 fails Miri Stacked Borrows checks
 /// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
 /// # type DominatorTree = ::portgraph::algorithms::DominatorTree<u32>;
 /// # use ::portgraph::algorithms::*;
@@ -72,6 +73,7 @@ where
 /// a ─┬> b ┐ │    ├─> c ─> e f ─┴> d ┴────────^
 ///
 /// ```
+/// # if cfg!(miri) { return; } // bitvec 1.1.1 fails Miri Stacked Borrows checks
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
 /// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
@@ -249,6 +251,7 @@ mod tests {
     use crate::{LinkMut, PortGraph, PortMut};
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_dominators_small() {
         //     ┏> b ┓
         //  a ─┫    ┣─> c ─> e
@@ -286,6 +289,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_dominators_filtered() {
         // a ─┬> b ┐
         //    │    ├─> c ─> e
@@ -333,6 +337,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_dominators_complex() {
         // This graph is taken from the paper "A Simple, Fast Dominance Algorithm"
         // by Keith D. Cooper, Timothy J. Harvey, and Ken Kennedy.

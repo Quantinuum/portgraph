@@ -706,6 +706,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_is_convex() {
         let graph = graph();
         let (n0, n1, n2, _, n4, n5) = (0..6).map(NodeIndex::new).collect_tuple().unwrap();
@@ -743,6 +744,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_is_convex_line() {
         let mut graph: PortGraph = PortGraph::new();
         let n0 = graph.add_node(0, 1);
@@ -899,6 +901,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_copy_in_parent_multi_input() {
         let mut graph: MultiPortGraph = MultiPortGraph::new();
         let n0 = graph.add_node(0, 1);
@@ -937,6 +940,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_copy_in_parent_multi_output() {
         let mut graph: MultiPortGraph = MultiPortGraph::new();
         let n0 = graph.add_node(0, 1);

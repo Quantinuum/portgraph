@@ -178,6 +178,7 @@ mod tests {
     #[rstest]
     #[case::topo_checker(ConvexCheckerVariants::new_topo())]
     #[case::line_checker(ConvexCheckerVariants::new_line())]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn induced_convexity_test(#[case] mut checker: ConvexCheckerVariants<PortGraph>) {
         let (g, [i1, i2, i3, n1, n2, o1, o2]) = graph();
         checker.init(g);
@@ -195,6 +196,7 @@ mod tests {
     #[rstest]
     #[case::topo_checker(ConvexCheckerVariants::new_topo())]
     #[case::line_checker(ConvexCheckerVariants::new_line())]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn edge_convexity_test(#[case] mut checker: ConvexCheckerVariants<PortGraph>) {
         let (g, [i1, i2, _, n1, n2, _, o2]) = graph();
         checker.init(g.clone());
@@ -229,6 +231,7 @@ mod tests {
     #[rstest]
     #[case::topo_checker(ConvexCheckerVariants::new_topo())]
     #[case::line_checker(ConvexCheckerVariants::new_line())]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn dangling_input(#[case] mut checker: ConvexCheckerVariants<PortGraph>) {
         let mut g: PortGraph = PortGraph::new();
         let n = g.add_node(1, 1);
@@ -239,6 +242,7 @@ mod tests {
     #[rstest]
     #[case::topo_checker(ConvexCheckerVariants::new_topo())]
     #[case::line_checker(ConvexCheckerVariants::new_line())]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn disconnected_graph(#[case] mut checker: ConvexCheckerVariants<PortGraph>) {
         let mut g: PortGraph = PortGraph::new();
         let n = g.add_node(1, 1);

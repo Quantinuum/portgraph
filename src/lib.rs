@@ -26,6 +26,7 @@
 //! # Example
 //!
 //! ```
+//! # if cfg!(miri) { return; } // bitvec 1.1.1 fails Miri Stacked Borrows checks
 //! use ::portgraph::*;
 //! use ::portgraph::algorithms::{toposort, TopoSort};
 //!

@@ -23,6 +23,7 @@ use crate::{Direction, LinkView, NodeIndex, PortGraph, PortIndex, PortView};
 /// And traverse it in post-order:
 ///
 /// ```
+/// # if cfg!(miri) { return; } // bitvec 1.1.1 fails Miri Stacked Borrows checks
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
 /// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
@@ -81,6 +82,7 @@ pub fn postorder<N: IndexBase, P: IndexBase, PO: IndexBase>(
 /// And traverse it in post-order:
 ///
 /// ```
+/// # if cfg!(miri) { return; } // bitvec 1.1.1 fails Miri Stacked Borrows checks
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
 /// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
@@ -281,6 +283,7 @@ mod tests {
     type PortGraph = crate::PortGraph<u32, u32, u16>;
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn postorder_tree() {
         let mut graph = PortGraph::new();
         // a ━▸ b ┳━▸ c
@@ -318,6 +321,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn postorder_dag() {
         let mut graph = PortGraph::new();
         // a -> b -> c
@@ -343,6 +347,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn postorder_cycle() {
         let mut graph = PortGraph::new();
         // a -> b -> c -> d -> b -> ...
@@ -366,6 +371,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn postorder_with_filters() {
         let mut graph = PortGraph::new();
         // a -> b -> c
