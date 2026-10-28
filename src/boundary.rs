@@ -537,6 +537,7 @@ pub(crate) mod test {
     }
 
     #[rstest]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_boundary_new(graph: MultiPortGraph) {
         let nodes = graph.nodes_iter().collect_vec();
 
@@ -564,6 +565,7 @@ pub(crate) mod test {
     }
 
     #[rstest]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_port_ordering(graph: MultiPortGraph) {
         let nodes = graph.nodes_iter().collect_vec();
         let subgraph = Subgraph::with_nodes(&graph, [nodes[1], nodes[2], nodes[5], nodes[6]]);
@@ -614,6 +616,7 @@ pub(crate) mod test {
     }
 
     #[rstest]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_order_comparison(graph: MultiPortGraph) {
         let nodes = graph.nodes_iter().collect_vec();
         let subgraph = Subgraph::with_nodes(&graph, [nodes[1], nodes[2], nodes[5], nodes[6]]);
@@ -659,6 +662,7 @@ pub(crate) mod test {
     /// The induced subgraph containing nodes `{0,1,2,3,5,6}`.
     /// Note that `0` is not reachable from the input, and `3` does not reach the output.
     #[rstest]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_dangling_nodes(graph: MultiPortGraph) {
         let nodes = graph.nodes_iter().collect_vec();
         let in_5_0 = graph.input(nodes[5], 0).unwrap();

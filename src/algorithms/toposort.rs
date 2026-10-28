@@ -22,6 +22,7 @@ use std::{collections::VecDeque, fmt::Debug, iter::FusedIterator};
 /// # Example
 ///
 /// ```
+/// # if cfg!(miri) { return; } // bitvec 1.1.1 fails Miri Stacked Borrows checks
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
 /// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
@@ -73,6 +74,7 @@ where
 /// # Example
 ///
 /// ```
+/// # if cfg!(miri) { return; } // bitvec 1.1.1 fails Miri Stacked Borrows checks
 /// # use ::portgraph::algorithms::*;
 /// # use ::portgraph::*;
 /// # type PortGraph = ::portgraph::PortGraph<u32, u32, u16>;
@@ -370,6 +372,7 @@ mod test {
     type MultiPortGraph = crate::MultiPortGraph<u32, u32, u16>;
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn small_toposort() {
         let mut graph: PortGraph = PortGraph::new();
         let node_a = graph.add_node(2, 3);
@@ -403,6 +406,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_toposort_multi_port() {
         let mut graph: MultiPortGraph = MultiPortGraph::new();
         let node_a = graph.add_node(0, 1);

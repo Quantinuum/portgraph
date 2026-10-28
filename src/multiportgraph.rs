@@ -699,6 +699,7 @@ pub(crate) mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn link_ports() {
         let mut g: MultiPortGraph = MultiPortGraph::new();
         let node0 = g.add_node(2, 1);
@@ -748,6 +749,7 @@ pub(crate) mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn link_iterators() {
         let mut g: MultiPortGraph = MultiPortGraph::new();
         let node0 = g.add_node(1, 2);
@@ -907,6 +909,7 @@ pub(crate) mod test {
 
     #[test]
     /// <https://github.com/Quantinuum/portgraph/pull/191>
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn remove_ports() {
         let mut g: MultiPortGraph = MultiPortGraph::new();
         let n = g.add_node(2, 2);

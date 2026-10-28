@@ -726,6 +726,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_line_partition(two_lines_ish_graph: (MultiPortGraph, [NodeIndex; 11])) {
         let (graph, nodes) = two_lines_ish_graph;
         let checker = LineConvexChecker::new(graph);
@@ -773,6 +774,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_line_partition_merging(two_lines_merging_graph: (MultiPortGraph, [NodeIndex; 3])) {
         let (graph, nodes) = two_lines_merging_graph;
         let checker = LineConvexChecker::new(graph);
@@ -784,6 +786,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_try_extend_intervals(two_lines_ish_graph: (MultiPortGraph, [NodeIndex; 11])) {
         let (graph, nodes) = two_lines_ish_graph;
         let checker = LineConvexChecker::new(graph);
@@ -799,6 +802,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_get_intervals_convex() {
         let (g, [i1, i2, i3, n1, n2, o1, o2]) = super::super::tests::graph();
         let checker = LineConvexChecker::new(g.clone());
@@ -829,6 +833,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_nodes_in_intervals() {
         let (g, [i1, i2, i3, n1, n2, o1, o2]) = super::super::tests::graph();
         let checker = LineConvexChecker::new(g.clone());
@@ -858,6 +863,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_lines_at_port() {
         let (g, nodes) = super::super::tests::graph();
         let checker = LineConvexChecker::new(g.clone());
@@ -874,6 +880,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_lines_at_port_multigraph() {
         const NUM_LINKS: usize = 3;
 
