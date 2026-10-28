@@ -58,7 +58,6 @@ pub trait PortView {
     ) -> Option<PortIndex<Self::PortIndexBase>>;
 
     /// Iterates over all the ports of the `node` in the given `direction`.
-    #[must_use]
     fn ports(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -66,7 +65,6 @@ pub trait PortView {
     ) -> impl Iterator<Item = PortIndex<Self::PortIndexBase>> + Clone;
 
     /// Iterates over the input and output ports of the `node` in sequence.
-    #[must_use]
     fn all_ports(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -75,7 +73,6 @@ pub trait PortView {
     /// Iterates over all the input ports of the `node`.
     ///
     /// Shorthand for [`PortView::ports`]`(`[`Direction::Incoming`]`)`.
-    #[must_use]
     #[inline]
     fn inputs(
         &self,
@@ -87,7 +84,6 @@ pub trait PortView {
     /// Iterates over all the output ports of the `node`.
     ///
     /// Shorthand for [`PortView::ports`]`(`[`Direction::Outgoing`]`)`.
-    #[must_use]
     #[inline]
     fn outputs(
         &self,
@@ -151,7 +147,6 @@ pub trait PortView {
     /// assert!(graph.links(node, Direction::Incoming).eq([]));
     /// assert!(graph.port_offsets(node, Direction::Outgoing).eq([PortOffset::new_outgoing(0), PortOffset::new_outgoing(1)]));
     /// ```
-    #[must_use]
     fn port_offsets(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -159,7 +154,6 @@ pub trait PortView {
     ) -> impl Iterator<Item = PortOffset<Self::PortOffsetBase>> + Clone;
 
     /// Iterates over the input and output port offsets of the `node` in sequence.
-    #[must_use]
     fn all_port_offsets(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -168,7 +162,6 @@ pub trait PortView {
     /// Iterates over all the input port offsets of the `node`.
     ///
     /// Shorthand for [`PortView::port_offsets`]`(`[`Direction::Incoming`]`)`.
-    #[must_use]
     #[inline]
     fn input_offsets(
         &self,
@@ -180,7 +173,6 @@ pub trait PortView {
     /// Iterates over all the output port offsets of the `node`.
     ///
     /// Shorthand for [`PortView::port_offsets`]`(`[`Direction::Outgoing`]`)`.
-    #[must_use]
     #[inline]
     fn output_offsets(
         &self,
@@ -210,11 +202,9 @@ pub trait PortView {
     fn port_count(&self) -> usize;
 
     /// Iterates over the nodes in the port graph.
-    #[must_use]
     fn nodes_iter(&self) -> impl Iterator<Item = NodeIndex<Self::NodeIndexBase>> + Clone;
 
     /// Iterates over the ports in the port graph.
-    #[must_use]
     fn ports_iter(&self) -> impl Iterator<Item = PortIndex<Self::PortIndexBase>> + Clone;
 
     /// Returns the capacity of the underlying buffer for nodes.
@@ -355,7 +345,6 @@ pub trait LinkView: PortView {
     /// assert_eq!(connections.next(), Some((g.output(a,1).unwrap(), g.input(b,1).unwrap())));
     /// assert_eq!(connections.next(), None);
     /// ```
-    #[must_use]
     fn get_connections(
         &self,
         from: NodeIndex<Self::NodeIndexBase>,
@@ -412,7 +401,6 @@ pub trait LinkView: PortView {
     }
 
     /// Returns the port (or ports if this is a [`MultiView`]) that the given `port` is linked to.
-    #[must_use]
     fn port_links(
         &self,
         port: PortIndex<Self::PortIndexBase>,
@@ -448,7 +436,6 @@ pub trait LinkView: PortView {
     /// assert!(graph.links(node_a, Direction::Outgoing).eq([(port_a, port_b)]));
     /// assert!(graph.links(node_b, Direction::Incoming).eq([(port_b, port_a)]));
     /// ```
-    #[must_use]
     fn links(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -456,7 +443,6 @@ pub trait LinkView: PortView {
     ) -> impl Iterator<Item = (Self::LinkEndpoint, Self::LinkEndpoint)> + Clone;
 
     /// Iterates over the connected input and output links of the `node` in sequence.
-    #[must_use]
     fn all_links(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -464,7 +450,6 @@ pub trait LinkView: PortView {
 
     /// Iterates over the connected input links of the `node`. Shorthand for
     /// [`LinkView::links`]`(`[`Direction::Incoming`]`)`.
-    #[must_use]
     #[inline]
     fn input_links(
         &self,
@@ -475,7 +460,6 @@ pub trait LinkView: PortView {
 
     /// Iterates over the connected output links of the `node`. Shorthand for
     /// [`LinkView::links`]`(`[`Direction::Outgoing`]`)`.
-    #[must_use]
     #[inline]
     fn output_links(
         &self,
@@ -504,7 +488,6 @@ pub trait LinkView: PortView {
     /// assert!(graph.neighbours(a, Direction::Outgoing).eq([b]));
     /// assert!(graph.neighbours(b, Direction::Incoming).eq([a,b]));
     /// ```
-    #[must_use]
     fn neighbours(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -512,7 +495,6 @@ pub trait LinkView: PortView {
     ) -> impl Iterator<Item = NodeIndex<Self::NodeIndexBase>> + Clone;
 
     /// Iterates over the input and output neighbours of the `node` in sequence.
-    #[must_use]
     fn all_neighbours(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -521,7 +503,6 @@ pub trait LinkView: PortView {
     /// Iterates over the input neighbours of the `node`.
     ///
     /// Shorthand for [`LinkView::neighbours`]`(`[`Direction::Incoming`]`)`.
-    #[must_use]
     #[inline]
     fn input_neighbours(
         &self,
@@ -533,7 +514,6 @@ pub trait LinkView: PortView {
     /// Iterates over the output neighbours of the `node`.
     ///
     /// Shorthand for [`LinkView::neighbours`]`(`[`Direction::Outgoing`]`)`.
-    #[must_use]
     #[inline]
     fn output_neighbours(
         &self,
@@ -693,7 +673,6 @@ pub trait MultiView: LinkView {
     fn subport_link(&self, subport: Self::LinkEndpoint) -> Option<Self::LinkEndpoint>;
 
     /// Iterates over all the subports of the `node` in the given `direction`.
-    #[must_use]
     fn subports(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -701,7 +680,6 @@ pub trait MultiView: LinkView {
     ) -> impl Iterator<Item = Self::LinkEndpoint> + Clone;
 
     /// Iterates over the input and output subports of the `node` in sequence.
-    #[must_use]
     fn all_subports(
         &self,
         node: NodeIndex<Self::NodeIndexBase>,
@@ -710,7 +688,6 @@ pub trait MultiView: LinkView {
     /// Iterates over all the input subports of the `node`.
     ///
     /// Shorthand for [`MultiView::subports`].
-    #[must_use]
     #[inline]
     fn subport_inputs(
         &self,
@@ -722,7 +699,6 @@ pub trait MultiView: LinkView {
     /// Iterates over all the output subports of the `node`.
     ///
     /// Shorthand for [`MultiView::subports`].
-    #[must_use]
     #[inline]
     fn subport_outputs(
         &self,
