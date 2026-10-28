@@ -57,7 +57,7 @@ jobs:
     name: continuous benchmarking
     # Not required, we can ignore it for the merge queue check.
     if: github.event_name != 'merge_group'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       checks: write
     steps:
