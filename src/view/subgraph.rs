@@ -547,6 +547,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
     fn test_traverse_subgraph_internal_multiport() {
         let mut graph = MultiPortGraph::new();
         let input = graph.add_node(0, 1);
