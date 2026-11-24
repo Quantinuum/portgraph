@@ -323,9 +323,12 @@ impl<P: IndexBase> Boundary<P> {
 
         itertools::Either::Right(std::iter::from_fn(move || {
             let node = nodes_to_process.pop()?;
-            for (local, remote) in graph.all_links(node) {
-                if boundary_ports.contains(&local.into()) || boundary_ports.contains(&remote.into())
-                {
+            let links = graph
+                .all_ports(node)
+                .filter(|port| !boundary_ports.contains(port))
+                .flat_map(|port| graph.port_links(port));
+            for (_, remote) in links {
+                if boundary_ports.contains(&remote.into()) {
                     continue;
                 }
                 let other_node = graph.port_node(remote).unwrap();
