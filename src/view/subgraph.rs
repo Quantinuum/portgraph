@@ -547,6 +547,30 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "bitvec 1.1.1 fails Miri Stacked Borrows checks")]
+    fn test_traverse_subgraph_internal_multiport() {
+        let mut graph = MultiPortGraph::new();
+        let input = graph.add_node(0, 1);
+        let source = graph.add_node(1, 1);
+        let used = graph.add_node(1, 1);
+        let unused = graph.add_node(1, 1);
+        let output = graph.add_node(1, 0);
+
+        graph.link_nodes(input, 0, source, 0).unwrap();
+        graph.link_nodes(source, 0, used, 0).unwrap();
+        graph.link_nodes(source, 0, unused, 0).unwrap();
+        graph.link_nodes(used, 0, output, 0).unwrap();
+
+        // Both consumers are internal, but only `used` touches the boundary.
+        let boundary = Boundary::new(graph.inputs(source), graph.outputs(used));
+        let subgraph = Subgraph::new_subgraph(&graph, boundary);
+        assert_eq!(
+            subgraph.nodes_iter().collect::<HashSet<_>>(),
+            HashSet::from([source, used, unused]),
+        );
+    }
+
+    #[test]
     fn test_traverse_subgraph_almost_complete() {
         let graph = graph();
         let (n0, n1, n2, n3, n4, n5) = (0..6).map(NodeIndex::new).collect_tuple().unwrap();

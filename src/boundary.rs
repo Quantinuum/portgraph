@@ -1,7 +1,7 @@
 //! Algorithms for handling port boundaries in a graph.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use itertools::Itertools;
 
@@ -309,42 +309,35 @@ impl<P: IndexBase> Boundary<P> {
         &'g self,
         graph: &'g G,
     ) -> impl Iterator<Item = NodeIndex<G::NodeIndexBase>> + 'g {
-        // For every visited edge, we mark both ports as visited
-        let mut visited = BTreeSet::new();
-
-        // The set of nodes to traverse
-        let mut nodes_to_process: BTreeSet<_> = self
-            .port_indices()
-            .map(|p| {
-                let this_node = graph.port_node(p).unwrap();
-                if let Some(other_port) = graph.port_link(p) {
-                    visited.insert(other_port.into());
-                }
-                visited.insert(p);
-                this_node
-            })
-            .collect();
-
-        if nodes_to_process.is_empty() {
-            // Edge case: no boundary edges, so the subgraph is the entire graph
-            nodes_to_process = graph.nodes_iter().collect();
+        if self.num_ports() == 0 {
+            return itertools::Either::Left(graph.nodes_iter());
         }
 
-        std::iter::successors(nodes_to_process.pop_first(), move |&node| {
-            // Traverse every unvisited edge in `node`
-            for p in graph.all_ports(node) {
-                if visited.insert(p) {
-                    // Visit it
-                    if let Some(other_port) = graph.port_link(p) {
-                        visited.insert(other_port.into());
-                        // Possibly a new node!
-                        let other_node = graph.port_node(other_port).unwrap();
-                        nodes_to_process.insert(other_node);
-                    }
+        let boundary_ports: HashSet<_> = self.port_indices().collect();
+        let mut visited = HashSet::new();
+        let mut nodes_to_process: Vec<_> = self
+            .port_indices()
+            .map(|port| graph.port_node(port).unwrap())
+            .filter(|&node| visited.insert(node))
+            .collect();
+
+        itertools::Either::Right(std::iter::from_fn(move || {
+            let node = nodes_to_process.pop()?;
+            let links = graph
+                .all_ports(node)
+                .filter(|port| !boundary_ports.contains(port))
+                .flat_map(|port| graph.port_links(port));
+            for (_, remote) in links {
+                if boundary_ports.contains(&remote.into()) {
+                    continue;
+                }
+                let other_node = graph.port_node(remote).unwrap();
+                if visited.insert(other_node) {
+                    nodes_to_process.push(other_node);
                 }
             }
-            nodes_to_process.pop_first()
-        })
+            Some(node)
+        }))
     }
 }
 
