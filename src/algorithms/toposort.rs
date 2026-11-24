@@ -273,7 +273,7 @@ where
         if *self.visited_ports.get(from_port) || self.ignore_node(node) {
             return false;
         }
-        let ports: Vec<_> = self.graph.ports(node, self.direction.reverse()).collect();
+        let ports: SmallVec<[_; 4]> = self.graph.ports(node, self.direction.reverse()).collect();
         ports.into_iter().all(|p| self.port_ready(node, p))
     }
 
@@ -291,10 +291,14 @@ where
             return true;
         }
         let ready = self.ignore_port(node, port) || {
-            let predecessors: SmallVec<[PortIndex<G::PortIndexBase>; 2]> =
-                self.graph.port_links(port).map(|(_, p)| p.into()).collect();
-            predecessors.into_iter().all(|p| {
-                *self.visited_ports.get(p) || self.ignore_port(self.graph.port_node(p).unwrap(), p)
+            let graph = &self.graph;
+            let port_filter = &mut self.port_filter;
+            graph.port_links(port).all(|(_, p)| {
+                let p = p.into();
+                *self.visited_ports.get(p)
+                    || port_filter
+                        .as_mut()
+                        .is_some_and(|filter| !filter(graph.port_node(p).unwrap(), p))
             })
         };
         if ready {
@@ -335,7 +339,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let node = self.candidate_nodes.pop_front()?;
-        let ports = self.graph.ports(node, self.direction).collect::<Vec<_>>();
+        let ports: SmallVec<[_; 4]> = self.graph.ports(node, self.direction).collect();
 
         for port in ports {
             self.visited_ports.set(port, true);
