@@ -137,11 +137,10 @@ jobs:
       - name: Configure default rust toolchain
         run: rustup override set ${{steps.toolchain.outputs.name}}
       - uses: cargo-bins/cargo-binstall@main
-      - name: Install cargo-minimal-versions
+      - name: Install minimal-version test tools
         run: |
-          # Install older versions that still support rust 1.75
-          cargo binstall cargo-hack@0.6.38 --force
-          cargo binstall cargo-minimal-versions@0.1.32 --force
+          # Use the tools' published lockfiles if binstall has to build them with Rust 1.75.
+          cargo binstall --no-confirm --locked cargo-hack@0.6.38 cargo-minimal-versions@0.1.32
       - name: Pin transitive dependencies not compatible with our MSRV
         # Add new dependencies as needed if the check fails due incorrectly set minimum versions in transitive dependencies,
         # you will see a message like:
