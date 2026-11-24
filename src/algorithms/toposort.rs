@@ -1,7 +1,11 @@
 use crate::{Direction, LinkView, NodeIndex, PortIndex, PortView, SecondaryMap};
 use bitvec::prelude::BitVec;
 use smallvec::SmallVec;
-use std::{collections::VecDeque, fmt::Debug, iter::FusedIterator};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Debug,
+    iter::FusedIterator,
+};
 
 /// Returns an iterator over a [`LinkView`] in topological order.
 ///
@@ -150,6 +154,9 @@ where
     /// reverse direction are marked once all their unfiltered links have been
     /// visited, or when their node is added as a source.
     visited_ports: Map,
+    /// Pending predecessor ports, in link order, for each blocked multiport.
+    pending_predecessors:
+        HashMap<PortIndex<G::PortIndexBase>, VecDeque<PortIndex<G::PortIndexBase>>>,
     /// A VecDeque is used for the node list to produce a canonical ordering,
     /// as successors of nodes already have a canonical ordering due to ports.
     candidate_nodes: VecDeque<NodeIndex<G::NodeIndexBase>>,
@@ -215,6 +222,7 @@ where
         Self {
             graph,
             visited_ports,
+            pending_predecessors: HashMap::new(),
             candidate_nodes,
             direction,
             nodes_seen: 0,
@@ -244,6 +252,7 @@ where
             for port in self.graph.ports(node, self.direction.reverse()) {
                 new_candidate |= !self.visited_ports.get(port);
                 self.visited_ports.set(port, true);
+                self.pending_predecessors.remove(&port);
             }
             if self.graph.num_ports(node, self.direction.reverse()) == 0 {
                 // If the node has no incoming ports, we check if it has been visited by looking at the outgoing ports.
@@ -278,10 +287,6 @@ where
     }
 
     /// Checks if all links to a port have been visited or filtered out.
-    ///
-    /// A port with multiple links is only marked as visited once all its links
-    /// are ready. We check the ports at the other end of each link to keep track
-    /// of which predecessors have been visited.
     fn port_ready(
         &mut self,
         node: NodeIndex<G::NodeIndexBase>,
@@ -290,21 +295,53 @@ where
         if *self.visited_ports.get(port) {
             return true;
         }
-        let ready = self.ignore_port(node, port) || {
-            let graph = &self.graph;
-            let port_filter = &mut self.port_filter;
-            graph.port_links(port).all(|(_, p)| {
-                let p = p.into();
-                *self.visited_ports.get(p)
-                    || port_filter
-                        .as_mut()
-                        .is_some_and(|filter| !filter(graph.port_node(p).unwrap(), p))
-            })
-        };
+        let ready = self.ignore_port(node, port) || self.predecessors_ready(port);
         if ready {
             self.visited_ports.set(port, true);
         }
         ready
+    }
+
+    /// Checks whether a port's predecessors are ready.
+    /// Caches the pending predecessors of a multiport and discards each one
+    /// as soon as the scan reaches it after it has been visited.
+    fn predecessors_ready(&mut self, port: PortIndex<G::PortIndexBase>) -> bool {
+        if let Some(pending) = self.pending_predecessors.get_mut(&port) {
+            while let Some(&predecessor) = pending.front() {
+                if !*self.visited_ports.get(predecessor) {
+                    return false;
+                }
+                pending.pop_front();
+            }
+            self.pending_predecessors.remove(&port);
+            return true;
+        }
+
+        let graph = &self.graph;
+        let port_filter = &mut self.port_filter;
+        let mut predecessors = graph.port_links(port).map(|(_, p)| p.into());
+        let mut ready = |p| {
+            *self.visited_ports.get(p)
+                || port_filter
+                    .as_mut()
+                    .is_some_and(|filter| !filter(graph.port_node(p).unwrap(), p))
+        };
+        let Some(first) = predecessors.next() else {
+            return true;
+        };
+        let Some(second) = predecessors.next() else {
+            return ready(first);
+        };
+        let pending: VecDeque<_> = [first, second]
+            .into_iter()
+            .chain(predecessors)
+            .filter(|&p| !ready(p))
+            .collect();
+        if pending.is_empty() {
+            return true;
+        }
+        self.pending_predecessors.insert(port, pending);
+        false
     }
 
     /// Returns `true` if the node should be ignored.
