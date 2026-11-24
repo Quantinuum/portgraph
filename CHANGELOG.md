@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.4](https://github.com/Quantinuum/portgraph/compare/v0.16.3...v0.16.4) - 2026-11-24
+
+### Bug Fixes
+
+- Follow every link on a multiport instead of just one when constructing `Boundary::internal_nodes()` ([#319](https://github.com/Quantinuum/portgraph/pull/319))
+- Toposort ignoring multiport inputs ([#315](https://github.com/Quantinuum/portgraph/pull/315))
+
 ## [0.16.3](https://github.com/Quantinuum/portgraph/compare/v0.16.2...v0.16.3) - 2026-10-28
 
 ### New Features
